@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+scikit-learn==1.6.1
+# scikit-learn
+xgboost
+scorecardpy
+pandas
+numpy
+joblib
+setuptools < 81
+mlflow
+xlrd >= 2.0.1

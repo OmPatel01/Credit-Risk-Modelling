@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Credit Risk Scorer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    header h1 {
+      font-size: 28px;
+      color: #1a1a2e;
+    }
+
+    header p {
+      color: #666;
+      margin-top: 6px;
+      font-size: 14px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+      padding: 32px;
+      width: 100%;
+      max-width: 720px;
+      margin-bottom: 24px;
+    }
+
+    .card h2 {
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e8edf2;
+      padding-bottom: 10px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .field input {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border 0.2s;
+    }
+
+    .field input:focus {
+      outline: none;
+      border-color: #2E75B6;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.88;
+    }
+
+    #btn-scorecard {
+      background: #2E75B6;
+      color: white;
+    }
+
+    #btn-both {
+      background: #1a1a2e;
+      color: white;
+    }
+
+    /* Result card */
+    #result {
+      display: none;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .result-box {
+      border-radius: 10px;
+      padding: 20px;
+      border-left: 5px solid #2E75B6;
+      background: #f8fafc;
+    }
+
+    .result-box h3 {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .result-box .val {
+      font-size: 26px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+
+    .result-box .sub {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    .badge-red {
+      background: #fde8e8;
+      color: #c0392b;
+    }
+
+    .badge-orange {
+      background: #fef0e6;
+      color: #d4680a;
+    }
+
+    .badge-yellow {
+      background: #fefde6;
+      color: #b8860b;
+    }
+
+    .badge-green {
+      background: #e8f8ee;
+      color: #1a7a4a;
+    }
+
+    .decision-approve {
+      color: #1a7a4a;
+      font-weight: 700;
+    }
+
+    .decision-decline {
+      color: #c0392b;
+      font-weight: 700;
+    }
+
+    .decision-review {
+      color: #d4680a;
+      font-weight: 700;
+    }
+
+    .error-msg {
+      background: #fde8e8;
+      color: #c0392b;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-top: 16px;
+    }
+
+    .loading {
+      text-align: center;
+      color: #666;
+      padding: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>🏦 Credit Risk Scorer</h1>
+  </header>
+
+  <!-- INPUT FORM -->
+  <div class="card">
+    <h2>Client Information</h2>
+
+    <div class="grid">
+      <div class="field">
+        <label>LIMIT_BAL — Credit Limit (NT$)</label>
+        <input type="number" id="LIMIT_BAL" value="50000" />
+      </div>
+      <div class="field">
+        <label>AGE</label>
+        <input type="number" id="AGE" value="35" />
+      </div>
+    </div>
+
+    <h2 style="margin-top:20px">Repayment Status (PAY scale: -2 to 8)</h2>
+    <div class="grid">
+      <div class="field"><label>PAY_0 — September 2005</label><input type="number" id="PAY_0" value="0" /></div>
+      <div class="field"><label>PAY_2 — August 2005</label> <input type="number" id="PAY_2" value="0" /></div>
+      <div class="field"><label>PAY_3 — July 2005</label> <input type="number" id="PAY_3" value="0" /></div>
+      <div class="field"><label>PAY_4 — June 2005</label> <input type="number" id="PAY_4" value="0" /></div>
+      <div class="field"><label>PAY_5 — May 2005</label> <input type="number" id="PAY_5" value="0" /></div>
+      <div class="field"><label>PAY_6 — April 2005</label> <input type="number" id="PAY_6" value="0" /></div>
+    </div>
+
+    <h2 style="margin-top:20px">Bill Amounts (NT$)</h2>
+    <div class="grid">
+      <div class="field"><label>BILL_AMT1 — Sep</label><input type="number" id="BILL_AMT1" value="20000" /></div>
+      <div class="field"><label>BILL_AMT2 — Aug</label><input type="number" id="BILL_AMT2" value="19000" /></div>
+      <div class="field"><label>BILL_AMT3 — Jul</label><input type="number" id="BILL_AMT3" value="18000" /></div>
+      <div class="field"><label>BILL_AMT4 — Jun</label><input type="number" id="BILL_AMT4" value="17000" /></div>
+      <div class="field"><label>BILL_AMT5 — May</label><input type="number" id="BILL_AMT5" value="16000" /></div>
+      <div class="field"><label>BILL_AMT6 — Apr</label><input type="number" id="BILL_AMT6" value="15000" /></div>
+    </div>
+
+    <h2 style="margin-top:20px">Payment Amounts (NT$)</h2>
+    <div class="grid">
+      <div class="field"><label>PAY_AMT1 — Sep</label><input type="number" id="PAY_AMT1" value="5000" /></div>
+      <div class="field"><label>PAY_AMT2 — Aug</label><input type="number" id="PAY_AMT2" value="5000" /></div>
+      <div class="field"><label>PAY_AMT3 — Jul</label><input type="number" id="PAY_AMT3" value="4000" /></div>
+      <div class="field"><label>PAY_AMT4 — Jun</label><input type="number" id="PAY_AMT4" value="4000" /></div>
+      <div class="field"><label>PAY_AMT5 — May</label><input type="number" id="PAY_AMT5" value="3000" /></div>
+      <div class="field"><label>PAY_AMT6 — Apr</label><input type="number" id="PAY_AMT6" value="3000" /></div>
+    </div>
+
+    <div class="btn-row">
+      <button id="btn-scorecard" onclick="predict('scorecard')">
+        📊 Scorecard Prediction
+      </button>
+      <button id="btn-both" onclick="predict('both')">
+        ⚡ Both Models
+      </button>
+    </div>
+  </div>
+
+  <!-- RESULT -->
+  <div class="card" id="result">
+    <h2>Prediction Result</h2>
+    <div id="result-content"></div>
+  </div>
+
+  <script>
+    const API = "http://localhost:8000";
+
+    const FIELDS = [
+      "LIMIT_BAL", "AGE",
+      "PAY_0", "PAY_2", "PAY_3", "PAY_4", "PAY_5", "PAY_6",
+      "BILL_AMT1", "BILL_AMT2", "BILL_AMT3", "BILL_AMT4", "BILL_AMT5", "BILL_AMT6",
+      "PAY_AMT1", "PAY_AMT2", "PAY_AMT3", "PAY_AMT4", "PAY_AMT5", "PAY_AMT6",
+    ];
+
+    function getInputData() {
+      const data = {};
+      FIELDS.forEach(f => {
+        const el = document.getElementById(f);
+        data[f] = parseFloat(el.value) || 0;
+      });
+      return data;
+    }
+
+    function riskBadge(risk) {
+      const map = {
+        "High Risk": "badge-red",
+        "Elevated": "badge-orange",
+        "Moderate": "badge-yellow",
+        "Low": "badge-green",
+        "Lower": "badge-green",
+        "Minimal": "badge-green",
+      };
+      return `<span class="badge ${map[risk] || ''}">${risk}</span>`;
+    }
+
+    function decisionClass(d) {
+      if (d === "Approve") return "decision-approve";
+      if (d === "Decline") return "decision-decline";
+      return "decision-review";
+    }
+
+    function scorecardHTML(r) {
+      return `
+      <div class="result-grid">
+        <div class="result-box">
+          <h3>CREDIT SCORE</h3>
+          <div class="val">${r.credit_score}</div>
+          <div class="sub">Range: 576 – 906</div>
+        </div>
+        <div class="result-box">
+          <h3>DEFAULT PROBABILITY</h3>
+          <div class="val">${(r.default_probability * 100).toFixed(1)}%</div>
+          <div class="sub">Scorecard model</div>
+        </div>
+        <div class="result-box">
+          <h3>RISK LEVEL</h3>
+          <div style="margin-top:6px">${riskBadge(r.risk_level)}</div>
+        </div>
+        <div class="result-box">
+          <h3>DECISION</h3>
+          <div class="val ${decisionClass(r.decision)}">${r.decision}</div>
+          <div class="sub">${r.model}</div>
+        </div>
+      </div>`;
+    }
+
+    function bothHTML(r) {
+      const sc = r.scorecard;
+      const xgb = r.xgboost;
+      return `
+      <p style="font-size:13px;color:#888;margin-bottom:16px">
+        🔵 Champion: Scorecard &nbsp;|&nbsp; 🟠 Challenger: XGBoost
+      </p>
+      <div class="result-grid">
+        <div class="result-box" style="border-color:#2E75B6">
+          <h3>🔵 CREDIT SCORE (Scorecard)</h3>
+          <div class="val">${sc.credit_score}</div>
+          <div class="sub">Default prob: ${(sc.default_probability * 100).toFixed(1)}%</div>
+          <div>${riskBadge(sc.risk_level)}</div>
+          <div class="val ${decisionClass(sc.decision)}" style="font-size:18px;margin-top:8px">${sc.decision}</div>
+        </div>
+        <div class="result-box" style="border-color:#e67e22">
+          <h3>🟠 XGBoost (Challenger)</h3>
+          <div class="val">${(xgb.default_probability * 100).toFixed(1)}%</div>
+          <div class="sub">Default probability</div>
+          <div>${riskBadge(xgb.risk_level)}</div>
+          <div class="val ${decisionClass(xgb.decision)}" style="font-size:18px;margin-top:8px">${xgb.decision}</div>
+        </div>
+      </div>`;
+    }
+
+    async function predict(mode) {
+      const resultDiv = document.getElementById("result");
+      const contentDiv = document.getElementById("result-content");
+
+      resultDiv.style.display = "block";
+      contentDiv.innerHTML = '<div class="loading">⏳ Scoring...</div>';
+
+      const endpoint = mode === "both" ? "/predict/both" : "/predict";
+
+      try {
+        const res = await fetch(API + endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(getInputData()),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || "API error");
+        }
+
+        const data = await res.json();
+        contentDiv.innerHTML = mode === "both"
+          ? bothHTML(data)
+          : scorecardHTML(data);
+
+      } catch (e) {
+        contentDiv.innerHTML = `<div class="error-msg">❌ Error: ${e.message}</div>`;
+      }
+    }
+  </script>
+</body>
+
+</html>

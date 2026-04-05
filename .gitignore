@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# MLflow
+mlruns/
+mlflow/
+
+# DVC cache
+.dvc/cache
+
+# System
+.DS_Store
+
+# IDE
+.vscode/
+
+.zip
+
