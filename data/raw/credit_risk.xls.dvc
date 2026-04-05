@@ -1,0 +1,5 @@
+outs:
+- md5: 44a0593863d2a9c9e0dbfde1dd3be9e4
+  size: 5539328
+  hash: md5
+  path: credit_risk.xls
