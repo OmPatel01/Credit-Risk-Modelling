@@ -1,4 +1,6 @@
+# services/sensitivity_service.py
 from typing import List, Dict, Optional
+import logging
 
 from services.ecl_service import compute_ecl
 from services.monte_carlo_service import run_monte_carlo_simulation
@@ -6,6 +8,9 @@ from services.risk_config import (
     SENSITIVITY_PD_SHIFTS,
     SENSITIVITY_LGD_SHIFTS,
 )
+
+# 🔥 Logger
+logger = logging.getLogger(__name__)
 
 
 def run_sensitivity_analysis(
@@ -19,18 +24,33 @@ def run_sensitivity_analysis(
     seed: int,
 ) -> Dict:
 
+    logger.info("[SENSITIVITY] Sensitivity analysis started")
+
     # ── Defaults ─────────────────────────
     pd_shifts = pd_shifts or SENSITIVITY_PD_SHIFTS
     lgd_shifts = lgd_shifts or SENSITIVITY_LGD_SHIFTS
+
+    logger.debug(
+        f"[SENSITIVITY] Input summary → "
+        f"Borrowers: {len(pd_values)}, "
+        f"LGD: {lgd}, "
+        f"PD shifts: {pd_shifts}, "
+        f"LGD shifts: {lgd_shifts}, "
+        f"Run simulation: {run_simulation}"
+    )
 
     # ── Baseline ECL ─────────────────────
     base = compute_ecl(pd_values, lgd, ead_values)
     baseline_ecl = base["total_ecl"]
 
+    logger.info(f"[SENSITIVITY] Baseline ECL: {baseline_ecl}")
+
     results = []
 
     # ── PD Sensitivity ───────────────────
     for shift in pd_shifts:
+
+        logger.info(f"[SENSITIVITY] PD shift: {shift * 100:.0f}%")
 
         adjusted_pd = [min(max(p * (1 + shift), 0), 1) for p in pd_values]
 
@@ -42,8 +62,14 @@ def run_sensitivity_analysis(
             2
         )
 
+        logger.info(
+            f"[SENSITIVITY] PD Impact → ECL: {total_ecl}, Change: {change_pct}%"
+        )
+
         simulation_result = None
         if run_simulation:
+            logger.debug("[SENSITIVITY] Running simulation for PD shift")
+
             simulation_result = run_monte_carlo_simulation(
                 pd_values=adjusted_pd,
                 lgd=lgd,
@@ -65,6 +91,8 @@ def run_sensitivity_analysis(
     # ── LGD Sensitivity ──────────────────
     for shift in lgd_shifts:
 
+        logger.info(f"[SENSITIVITY] LGD shift: {shift * 100:.0f}%")
+
         adjusted_lgd = min(max(lgd + shift, 0), 1)
 
         ecl_result = compute_ecl(pd_values, adjusted_lgd, ead_values)
@@ -75,8 +103,14 @@ def run_sensitivity_analysis(
             2
         )
 
+        logger.info(
+            f"[SENSITIVITY] LGD Impact → ECL: {total_ecl}, Change: {change_pct}%"
+        )
+
         simulation_result = None
         if run_simulation:
+            logger.debug("[SENSITIVITY] Running simulation for LGD shift")
+
             simulation_result = run_monte_carlo_simulation(
                 pd_values=pd_values,
                 lgd=adjusted_lgd,
@@ -94,6 +128,8 @@ def run_sensitivity_analysis(
             "ecl_change_pct": change_pct,
             "simulation": simulation_result,
         })
+
+    logger.info("[SENSITIVITY] Sensitivity analysis completed")
 
     return {
         "baseline_ecl": baseline_ecl,

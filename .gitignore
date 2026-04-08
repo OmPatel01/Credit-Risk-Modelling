@@ -1,20 +1,48 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.so
 .venv/
+
+# IDE
+.vscode/
+__pylance__/
+
+# System
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/
+
+# Data (ignore raw data)
+data/
+
+# Reports
+reports/
+
+# DVC
+.dvc/
+.dvcignore
+dvc.lock
 
 # MLflow
 mlruns/
 mlflow/
 
-# DVC cache
-.dvc/cache
+# Logs
+*.log
 
-# System
-.DS_Store
+# Zip
+*.zip
 
-# IDE
-.vscode/
+# Docker (optional)
+*.tar
 
-.zip
-
+# 🔥 Artifacts (IMPORTANT)
+artifacts/*
+!artifacts/models/
+!artifacts/preprocessing/

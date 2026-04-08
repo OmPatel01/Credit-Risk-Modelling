@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Risk Analytics - Simulation & Stress Testing</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+
+    <nav>
+        <div class="nav-container">
+            <div class="nav-brand">📊 Credit Risk Analytics</div>
+            <ul class="nav-links">
+                <li class="nav-link" onclick="navigateTo('index.html')">Dashboard</li>
+                <li class="nav-link" onclick="navigateTo('predict.html')">Prediction</li>
+                <li class="nav-link" onclick="navigateTo('analytics.html')">Risk Analysis</li>
+                <li class="nav-link active" onclick="navigateTo('simulation.html')">Simulation</li>
+                <li class="nav-link" onclick="navigateTo('stress.html')">Stress Test</li>
+                <li class="nav-link" onclick="navigateTo('sensitivity.html')">Sensitivity</li>
+            </ul>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="page-header">
+                <h1 class="page-title">Monte Carlo Simulation</h1>
+                <p class="page-description">Estimate portfolio loss distribution through stochastic simulation</p>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <section>
+            <h2 class="section-title">📚 What is Monte Carlo Simulation?</h2>
+            
+            <div class="info-box">
+                <strong>Monte Carlo Simulation:</strong><br>
+                Generates thousands of random scenarios where borrowers either default or repay.
+                For each scenario, calculates total portfolio losses. Returns a distribution of possible losses.
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+                <div class="info-box">
+                    <strong>Expected Loss (EL):</strong><br>
+                    Average loss across all simulations. This is the <strong>mean</strong> of the loss distribution.
+                </div>
+
+                <div class="info-box">
+                    <strong>Unexpected Loss (UL):</strong><br>
+                    Variability in losses (standard deviation). Higher UL means more unpredictability.
+                </div>
+
+                <div class="info-box">
+                    <strong>Value at Risk (VaR):</strong><br>
+                    Maximum loss at 95% confidence level. Example: "95% VaR = $100K means worst case loss in 95% of scenarios is $100K."
+                </div>
+
+                <div class="info-box">
+                    <strong>Conditional VaR (CVaR):</strong><br>
+                    Average loss beyond VaR. Captures tail risk — what happens in worst 5% of scenarios.
+                </div>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <section>
+            <h2 class="section-title">🎲 Run Simulation</h2>
+            <p class="section-subtitle">Configure simulation parameters and explore portfolio risk</p>
+            <div class="info-box" style="margin-bottom: 1.5rem;">
+                <strong>📌 Model Assumptions</strong>
+                <ul style="margin-top: 0.5rem; padding-left: 1.2rem;">
+                    <li>Probability of Default (PD) is derived from risk level slider</li>
+                    <li>Loss Given Default (LGD) is assumed constant at 50%</li>
+                    <li>Exposure at Default (EAD) is based on portfolio loan amounts</li>
+                    <li>Defaults are simulated assuming borrower independence</li>
+                    <li>Monte Carlo simulation generates random default scenarios</li>
+                </ul>
+            </div>
+            <div class="form-container" style="max-width: 500px;">
+                <div class="form-group">
+                    <label for="num-simulations">Number of Simulations</label>
+                    <input type="number" id="num-simulations" value="10000" min="1000" max="100000" step="1000">
+                    <div class="input-help">Higher = more accurate but slower (default: 10,000)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confidence-level">Confidence Level (%)</label>
+                    <input type="number" id="confidence-level" value="95" min="80" max="99" step="1">
+                    <div class="input-help">For VaR calculation (default: 95%)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="risk-level">Risk Level</label>
+                    <input 
+                        type="range" 
+                        id="risk-level" 
+                        min="1" 
+                        max="10" 
+                        value="5"
+                        step="1"
+                        oninput="updateRiskLabel()"
+                        <!-- style="width: 100%;" -->
+                        class="risk-slider"
+                    >
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 5px;">
+                        <span>Low Risk</span>
+                        <span id="risk-value">5 (Moderate | PD: 14%)</span>
+                        <span>High Risk</span>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-block" onclick="runSimulation()">▶️ Run Simulation</button>
+            </div>
+
+            <div id="message-container" style="margin-top: 1.5rem;"></div>
+            <div id="loading-container" class="hidden"></div>
+        </section>
+
+        <section id="results-section" class="hidden">
+            <h2 class="section-title">📊 Simulation Results</h2>
+            <div id="results-content"></div>
+        </section>
+
+    </main>
+
+    <footer>
+        <p style="margin-bottom: 0.5rem;"><strong>Credit Risk Analytics Platform</strong> v1.0.0</p>
+    </footer>
+
+    </footer>
+
+    <!-- Load external JavaScript for this page -->
+    <script src="js/simulation.js"></script>
+
+</body>
+</html>

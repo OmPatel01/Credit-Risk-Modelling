@@ -8,7 +8,6 @@ from services.segmentation_service import perform_segmentation
 
 router = APIRouter()
 
-
 @router.post(
     "/segmentation",
     response_model=SegmentationResponse,

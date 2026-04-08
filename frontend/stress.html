@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Risk Analytics - Stress Testing</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+
+<body>
+
+    <nav>
+        <div class="nav-container">
+            <div class="nav-brand">📊 Credit Risk Analytics</div>
+            <ul class="nav-links">
+                <li class="nav-link" onclick="navigateTo('index.html')">Dashboard</li>
+                <li class="nav-link" onclick="navigateTo('predict.html')">Prediction</li>
+                <li class="nav-link" onclick="navigateTo('analytics.html')">Risk Analysis</li>
+                <li class="nav-link" onclick="navigateTo('simulation.html')">Simulation</li>
+                <li class="nav-link active" onclick="navigateTo('stress.html')">Stress Test</li>
+                <li class="nav-link" onclick="navigateTo('sensitivity.html')">Sensitivity</li>
+            </ul>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="page-header">
+                <h1 class="page-title">Stress Testing</h1>
+                <p class="page-description">Evaluate portfolio resilience under adverse economic scenarios</p>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <section>
+            <h2 class="section-title">📚 Stress Scenarios</h2>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+                <div class="card">
+                    <div class="card-header" style="color: var(--success-color);">🟢 Base Case</div>
+                    <div class="card-body">
+                        <p><strong>Scenario:</strong> Normal economic conditions</p>
+                        <p style="margin-top: 0.5rem; color: var(--text-secondary);">
+                            • Interest rates: stable<br>
+                            • Employment: stable<br>
+                            • PD multiplier: 1.0x
+                        </p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="color: var(--warning-color);">🟡 Mild Stress</div>
+                    <div class="card-body">
+                        <p><strong>Scenario:</strong> Economic slowdown</p>
+                        <p style="margin-top: 0.5rem; color: var(--text-secondary);">
+                            • Interest rates: rising<br>
+                            • Employment: slight decline<br>
+                            • PD multiplier: 1.5x
+                        </p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="color: var(--danger-color);">🔴 Severe Stress</div>
+                    <div class="card-body">
+                        <p><strong>Scenario:</strong> Economic recession</p>
+                        <p style="margin-top: 0.5rem; color: var(--text-secondary);">
+                            • Interest rates: high<br>
+                            • Employment: significant decline<br>
+                            • PD multiplier: 3.0x
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <section>
+            <h2 class="section-title">⚠️ Run Stress Test</h2>
+            <div class="info-box" style="margin-bottom: 1.5rem;">
+            <strong>📌 Stress Test Assumptions</strong>
+            <ul style="margin-top: 0.5rem; padding-left: 1.2rem;">
+                <li>Base PD is derived from portfolio (default: 10%)</li>
+                <li>Stress scenarios apply PD multipliers (e.g., 1.5x, 3.0x)</li>
+                <li>LGD is adjusted per scenario or assumed constant at 50%</li>
+                <li>EAD is based on loan amounts in the portfolio</li>
+                <li>Macroeconomic stress is simulated via scaling factors (PD/LGD)</li>
+                <li>Optional Monte Carlo simulation assumes independent defaults</li>
+            </ul>
+        </div>
+            <button class="btn btn-primary btn-lg" onclick="runStressTest()">▶️ Run Stress Testing</button>
+            
+            <div id="message-container" style="margin-top: 1.5rem;"></div>
+            <div id="loading-container" class="hidden"></div>
+        </section>
+
+        <section id="results-section" class="hidden">
+            <h2 class="section-title">📊 Stress Test Results</h2>
+            <div id="results-content"></div>
+            <canvas id="stressChart" style="margin-top: 2rem;"></canvas>
+        </section>
+
+    </main>
+
+    <footer>
+        <p style="margin-bottom: 0.5rem;"><strong>Credit Risk Analytics Platform</strong> v1.0.0</p>
+    </footer>
+    <!-- Load external JavaScript for this page -->
+     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/stress.js"></script>
+    
+</body>
+</html>

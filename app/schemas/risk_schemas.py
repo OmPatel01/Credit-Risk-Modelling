@@ -231,6 +231,7 @@ class ScenarioResult(BaseModel):
     lgd_used: float
     total_ecl: float
     mean_ecl: float
+    avg_pd: float
     ecl_change_pct: Optional[float] = Field(
         None, description="% change vs base scenario"
     )

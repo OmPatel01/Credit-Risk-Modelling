@@ -1,0 +1,38 @@
+# Virtual env
+.venv
+venv
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+
+# Git & DVC
+.git
+.gitignore
+.dvc
+.dvcignore
+dvc.lock
+
+# MLflow
+mlruns/
+mlflow/
+
+# Data (VERY IMPORTANT)
+data/
+artifacts/*
+!artifacts/models/
+!artifacts/preprocessing/
+
+# Notebooks
+notebooks/
+
+# Reports
+reports/
+
+# OS files
+.DS_Store
+
+__pylance__/

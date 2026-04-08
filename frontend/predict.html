@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Risk Prediction - Credit Risk Analytics</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components.css">
+    <style>
+        /* ── Model Tab Switcher ─────────────────────────────────── */
+        .model-tabs {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 0;
+        }
+
+        .tab-button {
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.25s ease;
+            font-weight: 500;
+        }
+
+        .tab-button:hover { color: var(--primary-color); }
+
+        .tab-button.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+
+        /* ── Form sections ──────────────────────────────────────── */
+        .form-section { display: none; }
+        .form-section.active { display: block; }
+
+        .model-description {
+            background: rgba(30, 64, 175, 0.06);
+            border-left: 4px solid var(--primary-color);
+            padding: 1rem 1.25rem;
+            margin-bottom: 2rem;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        /* ── Input Group Headers ─────────────────────────────────── */
+        .input-group-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin: 2rem 0 1rem;
+            padding-bottom: 0.4rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .input-group-title:first-child { margin-top: 0; }
+
+        /* ── Form Grid ───────────────────────────────────────────── */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.25rem;
+        }
+
+        /* ── Tooltip hint ────────────────────────────────────────── */
+        .field-hint {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-top: 0.3rem;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ==================== NAVIGATION ==================== -->
+    <nav>
+        <div class="nav-container">
+            <div class="nav-brand">📊 Credit Risk Analytics</div>
+            <ul class="nav-links">
+                <li class="nav-link" onclick="navigateTo('index.html')">Dashboard</li>
+                <li class="nav-link active" onclick="navigateTo('predict.html')">Prediction</li>
+                <li class="nav-link" onclick="navigateTo('analytics.html')">Risk Analysis</li>
+                <li class="nav-link" onclick="navigateTo('simulation.html')">Simulation</li>
+                <li class="nav-link" onclick="navigateTo('stress.html')">Stress Test</li>
+                <li class="nav-link" onclick="navigateTo('sensitivity.html')">Sensitivity</li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- ==================== MAIN CONTENT ==================== -->
+    <main>
+        <section class="hero">
+            <div class="page-header">
+                <h1 class="page-title">🎯 Borrower Risk Prediction</h1>
+                <p class="page-description">
+                    Assess borrower default risk using advanced machine learning models.
+                    Enter business-friendly inputs — the system handles feature mapping internally.
+                </p>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <!-- MODEL SELECTION TABS -->
+        <section>
+            <h2 class="section-title">📊 Select Model</h2>
+
+            <div class="model-tabs">
+                <button class="tab-button active" onclick="switchModel('scorecard', this)">
+                    🔵 Scorecard Model
+                </button>
+                <button class="tab-button" onclick="switchModel('xgboost', this)">
+                    🟠 XGBoost Model
+                </button>
+            </div>
+
+            <!-- ── SCORECARD FORM ──────────────────────────────────── -->
+            <div id="scorecard-section" class="form-section active">
+                <div class="model-description">
+                    <strong>Scorecard Model (Champion):</strong> Logistic Regression with WOE transformation.
+                    Produces an interpretable credit score (576–906) alongside the probability of default.
+                    Best choice when explainability matters to stakeholders.
+                </div>
+
+                <!-- Demographics -->
+                <div class="input-group-title">👤 Demographics</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="sc-limit-bal">Credit Limit (NT$)</label>
+                        <input type="number" id="sc-limit-bal" min="1" value="50000">
+                        <div class="field-hint">Approved credit ceiling for the borrower</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="sc-age">Age</label>
+                        <input type="number" id="sc-age" min="18" max="100" value="35">
+                        <div class="field-hint">18–100 years</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="sc-education">Education Level</label>
+                        <select id="sc-education">
+                            <option value="1">1 — Graduate School</option>
+                            <option value="2" selected>2 — University</option>
+                            <option value="3">3 — High School</option>
+                            <option value="4">4 — Others</option>
+                        </select>
+                        <div class="field-hint">Highest completed education</div>
+                    </div>
+                </div>
+
+                <!-- Repayment Behavior -->
+                <div class="input-group-title">📅 Repayment Behavior</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="sc-recent-delay">Recent Delay (months)</label>
+                        <input type="number" id="sc-recent-delay" min="-2" max="8" value="0">
+                        <div class="field-hint">−2 = early pay, 0 = on time, 1+ = months late</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="sc-avg-past-delay">Avg Past Delay (months)</label>
+                        <input type="number" id="sc-avg-past-delay" min="0" max="8" step="0.5" value="0">
+                        <div class="field-hint">Average delay across older months (0 = always on time)</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="sc-num-delays">Number of Delayed Months</label>
+                        <input type="number" id="sc-num-delays" min="0" max="5" value="0">
+                        <div class="field-hint">How many of the past 5 months had a delay (0–5)</div>
+                    </div>
+                </div>
+
+                <!-- Billing History -->
+                <div class="input-group-title">💳 Billing History</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="sc-avg-bill">Avg Monthly Bill Amount (NT$)</label>
+                        <input type="number" id="sc-avg-bill" min="0" value="20000">
+                        <div class="field-hint">Average statement balance over the past 6 months</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="sc-bill-growth">Bill Growth Rate (−1 to 1)</label>
+                        <input type="number" id="sc-bill-growth" min="-1" max="1" step="0.01" value="0">
+                        <div class="field-hint">0 = stable, 0.1 = growing 10%, −0.1 = shrinking 10%</div>
+                    </div>
+                </div>
+
+                <!-- Payment History -->
+                <div class="input-group-title">💰 Payment History</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="sc-payment-amt">Monthly Payment Amount (NT$)</label>
+                        <input type="number" id="sc-payment-amt" min="0" value="5000">
+                        <div class="field-hint">Typical payment made each month</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="sc-zero-payments">Zero-Payment Months (count)</label>
+                        <input type="number" id="sc-zero-payments" min="0" max="6" value="0">
+                        <div class="field-hint">Number of months with $0 payment (applied to oldest months)</div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-lg" style="margin-top: 2rem; width: 100%;" onclick="predictRisk()">
+                    ▶️ Predict Default Risk
+                </button>
+            </div>
+
+            <!-- ── XGBOOST FORM ────────────────────────────────────── -->
+            <div id="xgboost-section" class="form-section">
+                <div class="model-description">
+                    <strong>XGBoost Model (Challenger):</strong> Gradient-boosted tree model.
+                    Typically achieves higher AUC than the scorecard but does not produce
+                    an interpretable credit score. Best for benchmarking or ensemble use.
+                </div>
+
+                <!-- Demographics -->
+                <div class="input-group-title">👤 Demographics</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="xgb-limit-bal">Credit Limit (NT$)</label>
+                        <input type="number" id="xgb-limit-bal" min="1" value="50000">
+                        <div class="field-hint">Approved credit ceiling for the borrower</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="xgb-age">Age</label>
+                        <input type="number" id="xgb-age" min="18" max="100" value="35">
+                        <div class="field-hint">18–100 years</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="xgb-education">Education Level</label>
+                        <select id="xgb-education">
+                            <option value="1">1 — Graduate School</option>
+                            <option value="2" selected>2 — University</option>
+                            <option value="3">3 — High School</option>
+                            <option value="4">4 — Others</option>
+                        </select>
+                        <div class="field-hint">Highest completed education</div>
+                    </div>
+                </div>
+
+                <!-- Repayment Behavior -->
+                <div class="input-group-title">📅 Repayment Behavior</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="xgb-recent-delay">Recent Delay (months)</label>
+                        <input type="number" id="xgb-recent-delay" min="-2" max="8" value="0">
+                        <div class="field-hint">−2 = early pay, 0 = on time, 1+ = months late</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="xgb-avg-past-delay">Avg Past Delay (months)</label>
+                        <input type="number" id="xgb-avg-past-delay" min="0" max="8" step="0.5" value="0">
+                        <div class="field-hint">Average delay across older months (0 = always on time)</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="xgb-num-delays">Number of Delayed Months</label>
+                        <input type="number" id="xgb-num-delays" min="0" max="5" value="0">
+                        <div class="field-hint">How many of the past 5 months had a delay (0–5)</div>
+                    </div>
+                </div>
+
+                <!-- Billing History -->
+                <div class="input-group-title">💳 Billing History</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="xgb-avg-bill">Avg Monthly Bill Amount (NT$)</label>
+                        <input type="number" id="xgb-avg-bill" min="0" value="20000">
+                        <div class="field-hint">Average statement balance over the past 6 months</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="xgb-bill-growth">Bill Growth Rate (−1 to 1)</label>
+                        <input type="number" id="xgb-bill-growth" min="-1" max="1" step="0.01" value="0">
+                        <div class="field-hint">0 = stable, 0.1 = growing 10%, −0.1 = shrinking 10%</div>
+                    </div>
+                </div>
+
+                <!-- Payment History -->
+                <div class="input-group-title">💰 Payment History</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="xgb-payment-amt">Monthly Payment Amount (NT$)</label>
+                        <input type="number" id="xgb-payment-amt" min="0" value="5000">
+                        <div class="field-hint">Typical payment made each month</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="xgb-zero-payments">Zero-Payment Months (count)</label>
+                        <input type="number" id="xgb-zero-payments" min="0" max="6" value="0">
+                        <div class="field-hint">Number of months with $0 payment (applied to oldest months)</div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-lg" style="margin-top: 2rem; width: 100%;" onclick="predictRisk()">
+                    ▶️ Predict Default Risk
+                </button>
+            </div>
+
+            <div id="message-container" style="margin-top: 1.5rem;"></div>
+            <div id="loading-container" class="hidden"></div>
+        </section>
+
+        <!-- ==================== RESULTS ==================== -->
+        <section id="results-section" class="hidden">
+            <h2 class="section-title">📊 Prediction Results</h2>
+            <div id="results-content"></div>
+
+            <div class="info-box" style="margin-top: 1.5rem;">
+                <strong>How to read these results:</strong><br>
+                • <strong>Probability of Default (PD):</strong> Estimated likelihood the borrower will miss payments<br>
+                • <strong>Credit Score (Scorecard only):</strong> Interpretable score from 576–906; higher = lower risk<br>
+                • <strong>Risk Level:</strong> Low (&lt;5% PD) · Medium (5–20%) · High (&gt;20%)<br>
+                • <strong>Decision:</strong> Approve (Low) · Review (Medium) · Reject (High)
+            </div>
+        </section>
+        <!-- ==================== WHAT-IF ANALYSIS ==================== -->
+        <section id="whatif-section" style="margin-top: 2rem;">
+            <h2 class="section-title">🔍 What-if Analysis (Scorecard)</h2>
+
+            <div class="info-box" style="margin-bottom: 1rem;">
+                Change one parameter and see how credit score & PD change.
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="whatif-feature">Select Feature</label>
+                    <select id="whatif-feature">
+                        <option value="recent_delay">Recent Delay</option>
+                        <option value="avg_past_delay">Avg Past Delay</option>
+                        <option value="num_delays">Number of Delays</option>
+                        <option value="avg_bill_amount">Avg Bill Amount</option>
+                        <option value="bill_growth_rate">Bill Growth Rate</option>
+                        <option value="payment_amount">Payment Amount</option>
+                        <option value="zero_payment_count">Zero Payment Count</option>
+                        <option value="LIMIT_BAL">Credit Limit</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="whatif-value">New Value</label>
+                    <input type="number" id="whatif-value" value="0">
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" style="margin-top: 1rem;" onclick="runWhatIf()">
+                🔄 Run What-if Analysis
+            </button>
+
+            <div id="whatif-result" style="margin-top: 1.5rem;"></div>
+        </section>
+    </main>
+
+    <!-- ==================== FOOTER ==================== -->
+    <footer>
+        <p style="margin-bottom: 0.5rem;">
+            <strong>Credit Risk Analytics Platform</strong> v1.0.0
+        </p>
+        <p style="font-size: 0.9rem;">
+            Business Input Layer · Automatic Feature Mapping · Model-Aligned Prediction
+        </p>
+    </footer>
+
+    <script src="js/predict.js"></script>
+</body>
+</html>

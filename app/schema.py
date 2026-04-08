@@ -10,8 +10,7 @@ Pydantic automatically:
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
-
+from typing import Optional, Dict
 
 class ClientInput(BaseModel):
     """
@@ -25,6 +24,7 @@ class ClientInput(BaseModel):
 
     # ── Demographics ─────────────────────────────────────────────
     AGE:       int   = Field(..., description="Client age in years", example=35)
+    EDUCATION: int   = Field(..., description="Education level (1-6)", example=2)
 
     # ── Repayment status (PAY scale: -2 to 8) ────────────────────
     PAY_0: int = Field(..., description="Repayment status September 2005", example=0)
@@ -55,6 +55,7 @@ class ClientInput(BaseModel):
             "example": {
                 "LIMIT_BAL": 50000,
                 "AGE": 35,
+                "EDUCATION": 2,
                 "PAY_0": 0, "PAY_2": 0, "PAY_3": 0,
                 "PAY_4": 0, "PAY_5": 0, "PAY_6": 0,
                 "BILL_AMT1": 20000, "BILL_AMT2": 19000, "BILL_AMT3": 18000,
@@ -86,3 +87,121 @@ class CombinedResponse(BaseModel):
     """Response combining both models — returned by /predict/both."""
     scorecard: ScorecardResponse
     xgboost:   XGBResponse
+
+
+class BusinessInput(BaseModel):
+    """
+    User-friendly business input for credit risk prediction.
+    
+    This schema abstracts technical details and maps to the raw dataset format
+    (ClientInput) via the input_mapper module.
+    
+    Fields are intentionally named using business terminology rather than
+    the original dataset feature names.
+    """
+
+    # ── Credit Profile ───────────────────────────────────────────
+    LIMIT_BAL: float = Field(
+        ..., 
+        description="Credit limit (NT dollars)", 
+        example=50000,
+        ge=0
+    )
+    AGE: int = Field(
+        ..., 
+        description="Age in years", 
+        example=35,
+        ge=18,
+        le=100
+    )
+    EDUCATION: int = Field(
+        ..., 
+        description="Education level (1=graduate school, 2=university, 3=high school, 4=others)", 
+        example=2,
+        ge=1,
+        le=6
+    )
+
+    # ── Repayment Behavior ───────────────────────────────────────
+    recent_delay: int = Field(
+        ...,
+        description="Most recent payment status (-2 to 8, where 0=paid on time, >0=months overdue, -1/-2=revolving credit/paid in full)",
+        example=0,
+        ge=-2,
+        le=8
+    )
+    avg_past_delay: float = Field(
+        ...,
+        description="Average payment status over previous 5 months (PAY_2 through PAY_6)",
+        example=0.0,
+        ge=-2,
+        le=8
+    )
+    num_delays: int = Field(
+        ...,
+        description="Number of months with payment delays (0-6)",
+        example=0,
+        ge=0,
+        le=6
+    )
+
+    # ── Billing History ──────────────────────────────────────────
+    avg_bill_amount: float = Field(
+        ...,
+        description="Average monthly bill amount (NT dollars)",
+        example=15000,
+        ge=0
+    )
+    bill_growth_rate: float = Field(
+        default=0.0,
+        description="Rate of growth in bill amounts from oldest to newest month (-1 to 1)",
+        example=0.0,
+        ge=-1,
+        le=1
+    )
+
+    # ── Payment Amount ───────────────────────────────────────────
+    payment_amount: float = Field(
+        ...,
+        description="Typical monthly payment amount (NT dollars)",
+        example=5000,
+        ge=0
+    )
+    zero_payment_count: int = Field(
+        default=0,
+        description="Number of months with zero payment (0-6)",
+        example=0,
+        ge=0,
+        le=6
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "LIMIT_BAL": 50000,
+                "AGE": 35,
+                "EDUCATION": 2,
+                "recent_delay": 0,
+                "avg_past_delay": 0.0,
+                "num_delays": 0,
+                "avg_bill_amount": 15000,
+                "bill_growth_rate": 0.0,
+                "payment_amount": 5000,
+                "zero_payment_count": 0,
+            }
+        }
+
+
+class WhatIfRequest(BaseModel):
+    base_input: BusinessInput
+    modified_input: BusinessInput
+
+
+class WhatIfResponse(BaseModel):
+    base_score: int
+    new_score: int
+    delta_score: int
+
+    base_pd: float
+    new_pd: float
+    delta_pd: float

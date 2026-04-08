@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+import logging
 
 from app.schemas.risk_schemas import (
     ECLRequest,
@@ -8,6 +9,8 @@ from services.ecl_service import compute_ecl
 
 router = APIRouter()
 
+# Create logger for this file
+logger = logging.getLogger(__name__)
 
 @router.post(
     "/ecl",
@@ -17,13 +20,32 @@ router = APIRouter()
 )
 def calculate_ecl(request: ECLRequest):
     try:
+        # 🔹 Log incoming request (summary, not full data)
+        logger.info("[ECL] Request received")
+        logger.debug(
+            f"[ECL] Inputs → PD count: {len(request.pd_values)}, "
+            f"LGD: {request.lgd}, "
+            f"EAD count: {len(request.ead_values)}"
+        )
+
+        # 🔹 Service call
+        logger.info("[ECL] Computing ECL...")
         result = compute_ecl(
             pd_values=request.pd_values,
             lgd=request.lgd,
             ead_values=request.ead_values,
             segment_labels=request.segment_labels,
         )
+
+        # 🔹 Log result summary (not full object)
+        logger.info(
+            f"[ECL] Computation successful → Total ECL: {result['total_ecl']}, "
+            f"Mean ECL: {result['mean_ecl']}"
+        )
+
         return result
 
     except Exception as e:
+        # 🔴 Log error properly
+        logger.error(f"[ECL] Error occurred: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))

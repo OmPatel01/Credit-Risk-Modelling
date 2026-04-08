@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Risk Analytics - Risk Analysis</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+
+    <!-- ==================== NAVIGATION ==================== -->
+    <nav>
+        <div class="nav-container">
+            <div class="nav-brand">
+                📊 Credit Risk Analytics
+            </div>
+            <ul class="nav-links">
+                <li class="nav-link" onclick="navigateTo('index.html')">Dashboard</li>
+                <li class="nav-link" onclick="navigateTo('predict.html')">Prediction</li>
+                <li class="nav-link active" onclick="navigateTo('analytics.html')">Risk Analysis</li>
+                <li class="nav-link" onclick="navigateTo('simulation.html')">Simulation</li>
+                <li class="nav-link" onclick="navigateTo('stress.html')">Stress Test</li>
+                <li class="nav-link" onclick="navigateTo('sensitivity.html')">Sensitivity</li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- ==================== MAIN CONTENT ==================== -->
+    <main>
+        <!-- PAGE HEADER -->
+        <section class="hero">
+            <div class="page-header">
+                <h1 class="page-title">Risk Analytics & ECL</h1>
+                <p class="page-description">
+                    Analyze portfolio risk composition and calculate Expected Credit Loss
+                </p>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <!-- DOMAIN EXPLANATIONS -->
+        <section>
+            <h2 class="section-title">📚 Key Concepts</h2>
+            
+            <div class="info-box">
+                <strong>Risk Segmentation:</strong><br>
+                Groups borrowers into risk buckets (Low, Medium, High) based on PD. 
+                Simplifies portfolio analysis and decision-making by providing a high-level overview.
+            </div>
+
+            <div class="info-box" style="margin-top: 1.5rem;">
+                <strong>Expected Credit Loss (ECL):</strong><br>
+                Estimated financial loss from loan defaults. Calculated as: <strong>ECL = PD × LGD × EAD</strong>
+                <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                    <li><strong>PD (Probability of Default):</strong> Likelihood of borrower default</li>
+                    <li><strong>LGD (Loss Given Default):</strong> Percentage of exposure lost if default occurs (typically 45%)</li>
+                    <li><strong>EAD (Exposure at Default):</strong> Outstanding loan amount at time of default</li>
+                </ul>
+                Required for IFRS 9 regulatory compliance.
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <!-- SAMPLE PORTFOLIO SECTION -->
+        <section>
+            <h2 class="section-title">📋 Sample Portfolio</h2>
+            
+            <div class="info-box success">
+                <strong>ℹ️ Note:</strong> This example uses 5 sample borrowers. 
+                In production, you would upload or import your actual portfolio.
+            </div>
+
+            <div class="table-wrapper" style="margin-top: 1.5rem;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Borrower ID</th>
+                            <th>Age</th>
+                            <th>Income (USD)</th>
+                            <th>Loan Amount (USD)</th>
+                            <th>PD (%)</th>
+                            <th>Risk Level</th>
+                        </tr>
+                    </thead>
+                    <tbody id="portfolio-table-body">
+                        <tr>
+                            <td>B001</td>
+                            <td>35</td>
+                            <td>60000</td>
+                            <td contenteditable="true" class="editable-cell">25000</td>
+                            <td contenteditable="true" class="editable-cell">0.032</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td>B002</td>
+                            <td>42</td>
+                            <td>45000</td>
+                            <td contenteditable="true" class="editable-cell">25000</td>
+                            <td contenteditable="true" class="editable-cell">0.032</td>
+                            <td>-</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="editable-hint">
+                ✏️ <strong>Tip:</strong> You can edit <strong>PD (%)</strong> and 
+                <strong>Loan Amount</strong> directly in the table.  
+                Try changing values and click <strong>Analyze Segmentation</strong> to see impact.
+                </div>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <!-- ANALYSIS BUTTONS -->
+        <section>
+            <h2 class="section-title">🔍 Portfolio Analysis</h2>
+            <div class="info-box" style="margin-bottom: 1.5rem;">
+    <strong>📌 Model Assumptions</strong>
+    <ul style="margin-top: 0.5rem; padding-left: 1.2rem;">
+        <li>Probability of Default (PD) is user-provided or edited in the table</li>
+        <li>Loss Given Default (LGD) is user-defined (default: 45%)</li>
+        <li>Exposure at Default (EAD) is taken from loan amount</li>
+        <li>Expected Credit Loss is computed as <strong>ECL = PD × LGD × EAD</strong></li>
+        <li>Risk segmentation is based on PD thresholds (Low, Medium, High)</li>
+        <li>Segment-level aggregation groups borrowers by risk category</li>
+    </ul>
+</div>
+            <div class="control-bar">
+    
+                <!-- <div class="control-group">
+                    <label>LGD (Loss Given Default)</label>
+                    <input type="number" id="lgd-input" value="0.45" step="0.01">
+                </div> -->
+
+                <!-- <div class="control-actions">
+                    <button class="btn btn-primary" onclick="analyzeSegmentation()">
+                        📊 Analyze Segmentation
+                    </button>
+
+                    <button class="btn btn-secondary" onclick="calculateECL()">
+                        💰 Calculate ECL
+                    </button>
+                </div> -->
+
+            </div>
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label>LGD (Loss Given Default)</label>
+                    <input type="number" id="lgd-input" value="0.45" step="0.01">
+                </div>
+                <button class="btn btn-primary" onclick="analyzeSegmentation()">
+                    📊 Analyze Segmentation
+                </button>
+                <button class="btn btn-secondary" onclick="calculateECL()">
+                    💰 Calculate ECL
+                </button>
+            </div>
+
+            <div id="message-container"></div>
+            <div id="loading-container" class="hidden"></div>
+        </section>
+
+        <!-- SEGMENTATION RESULTS -->
+        <section id="segmentation-section" class="hidden" style="margin-top: 2rem;">
+            <h2 class="section-title">📊 Risk Segmentation Results</h2>
+            <div id="segmentation-content"></div>
+        </section>
+
+        <!-- ECL RESULTS -->
+        <section id="ecl-section" class="hidden" style="margin-top: 2rem;">
+            <h2 class="section-title">💰 Expected Credit Loss (ECL) Results</h2>
+            <div id="ecl-content"></div>
+        </section>
+
+    </main>
+
+    <!-- ==================== FOOTER ==================== -->
+    <footer>
+        <p style="margin-bottom: 0.5rem;">
+            <strong>Credit Risk Analytics Platform</strong> v1.0.0
+        </p>
+        <p style="font-size: 0.9rem;">
+            Portfolio Risk Analysis & ECL Calculation
+        </p>
+    </footer>
+
+    <!-- Load external JavaScript for this page -->
+    <script src="js/analytics.js"></script>
+
+</body>
+</html>

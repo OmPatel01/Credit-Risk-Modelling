@@ -1,0 +1,13 @@
+stages:
+  train:
+    cmd: python mlops/train.py
+    deps:
+    - data/raw/credit_risk.xls
+    - mlops/train.py
+    outs:
+    - artifacts/models
+    - artifacts/preprocessing
+    params:
+    - data
+    - logistic
+    - xgboost

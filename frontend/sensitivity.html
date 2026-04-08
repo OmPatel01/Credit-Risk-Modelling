@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Risk Analytics - Sensitivity Analysis</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+
+    <nav>
+        <div class="nav-container">
+            <div class="nav-brand">📊 Credit Risk Analytics</div>
+            <ul class="nav-links">
+                <li class="nav-link" onclick="navigateTo('index.html')">Dashboard</li>
+                <li class="nav-link" onclick="navigateTo('predict.html')">Prediction</li>
+                <li class="nav-link" onclick="navigateTo('analytics.html')">Risk Analysis</li>
+                <li class="nav-link" onclick="navigateTo('simulation.html')">Simulation</li>
+                <li class="nav-link" onclick="navigateTo('stress.html')">Stress Test</li>
+                <li class="nav-link active" onclick="navigateTo('sensitivity.html')">Sensitivity</li>
+            </ul>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="page-header">
+                <h1 class="page-title">Sensitivity Analysis</h1>
+                <p class="page-description">Identify key risk drivers and measure impact on portfolio losses</p>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <section>
+            <h2 class="section-title">📚 What is Sensitivity Analysis?</h2>
+            
+            <div class="info-box">
+                <strong>Purpose:</strong><br>
+                Measures how changes in key risk drivers (PD, LGD) impact total portfolio losses.
+                Identifies which factors have the greatest influence on risk.
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+                <div class="card">
+                    <div class="card-header">PD Sensitivity</div>
+                    <div class="card-body">
+                        Measures how portfolio losses change when default probability shifts by ±10%, ±20%.
+                        <p style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.95rem;">
+                            Formula: Δ ECL = Δ PD × LGD × EAD
+                        </p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">LGD Sensitivity</div>
+                    <div class="card-body">
+                        Measures how portfolio losses change when loss-given-default shifts by ±5%, ±10%.
+                        <p style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.95rem;">
+                            Formula: Δ ECL = PD × Δ LGD × EAD
+                        </p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">Key Insights</div>
+                    <div class="card-body">
+                        Identify which drivers have the greatest impact:
+                        <ul style="margin-left: 1.5rem; margin-top: 0.5rem; font-size: 0.95rem;">
+                            <li>Elasticity: % change in loss per 1% change in driver</li>
+                            <li>Allows for targeted risk mitigation</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <section>
+            <h2 class="section-title">🔍 Run Sensitivity Analysis</h2>
+            <div class="info-box" style="margin-bottom: 1.5rem;">
+                <strong>📌 Sensitivity Assumptions</strong>
+                <ul style="margin-top: 0.5rem; padding-left: 1.2rem;">
+                    <li>Baseline PD is assumed constant across portfolio (default: 10%)</li>
+                    <li>Baseline LGD is fixed at 50%</li>
+                    <li>Exposure at Default (EAD) is derived from loan amounts</li>
+                    <li>PD is varied using predefined shifts (e.g., ±10%, ±20%)</li>
+                    <li>LGD is varied independently using predefined shifts (e.g., ±5%, ±10%)</li>
+                    <li>Other variables are held constant (<strong>ceteris paribus</strong>)</li>
+                </ul>
+            </div>
+            <button class="btn btn-primary btn-lg" onclick="runSensitivity()">▶️ Analyze Sensitivity</button>
+            
+            <div id="message-container" style="margin-top: 1.5rem;"></div>
+            <div id="loading-container" class="hidden"></div>
+        </section>
+
+        <section id="results-section" class="hidden">
+            <h2 class="section-title">📊 Sensitivity Results</h2>
+            <div id="results-content"></div>
+        </section>
+
+    </main>
+
+    <footer>
+        <p style="margin-bottom: 0.5rem;"><strong>Credit Risk Analytics Platform</strong> v1.0.0</p>
+    </footer>
+    <!-- Load external JavaScript for this page -->
+    <script src="js/sensitivity.js"></script>
+
+</body>
+</html>

@@ -41,6 +41,7 @@ from sklearn.preprocessing import OrdinalEncoder
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 
+import yaml
 import mlflow
 import mlflow.sklearn
 
@@ -61,6 +62,11 @@ mlflow.set_tracking_uri(MLFLOW_DIR.as_uri())
 mlflow.set_experiment("credit_risk_model")
 
 print(f"MLflow tracking URI: {mlflow.get_tracking_uri()}")
+
+
+with open("params.yaml") as f:
+    params = yaml.safe_load(f)
+
 # ══════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ══════════════════════════════════════════════════════════════════
@@ -72,11 +78,14 @@ ARTIFACTS_PREP   = "artifacts/preprocessing"
 # Scorecard calibration
 POINTS0     = 600   # base score for average-risk client
 PDO         = 50    # points to double odds — higher = wider range
-TEST_SIZE   = 0.2
-RANDOM_SEED = 42
-LR_C        = 1.0   # logistic regression regularization
-LR_MAX_ITER = 1000
-
+# TEST_SIZE   = 0.2
+# RANDOM_SEED = 42
+# LR_C        = 1.0   # logistic regression regularization
+# LR_MAX_ITER = 1000
+TEST_SIZE   = params["data"]["test_size"]
+RANDOM_SEED = params["data"]["random_seed"]
+LR_C        = params["logistic"]["C"]
+LR_MAX_ITER = params["logistic"]["max_iter"]
 # Features removed because of negative WOE coefficients or low IV
 NEGATIVE_COEF_FEATURES = [
     "PAY_BILL_RATIO_1",  # negative coef — overlaps NUM_ZERO_PAYMENTS
@@ -549,6 +558,9 @@ def train_scorecard():
         mlflow.log_param("model_type", "logistic_regression")
         mlflow.log_param("approach", "scorecard_woe")
 
+        mlflow.log_params(params["logistic"])
+        mlflow.log_params(params["data"])
+
         mlflow.log_metric("auc", auc_score)
         mlflow.log_metric("ks", ks_score)
         mlflow.log_metric("gini", gini_coef)
@@ -557,7 +569,12 @@ def train_scorecard():
         mlflow.set_tag("model_family", "scorecard")
         mlflow.set_tag("stage", "training")
 
-        mlflow.sklearn.log_model(lr_model, "scorecard_model")
+        # mlflow.sklearn.log_model(lr_model, "scorecard_model")
+        mlflow.sklearn.log_model(
+            lr_model,
+            "scorecard_model",
+            registered_model_name="credit_risk_scorecard"
+        )
 
         mlflow.log_artifact(lr_path)        # logs the .joblib to MLflow run
         mlflow.log_artifact(bins_path)
@@ -624,15 +641,15 @@ def train_xgb(df_model: pd.DataFrame):
         ("preprocessor", xgb_preprocessor),
         ("model", XGBClassifier(
             scale_pos_weight=3.52,
-            n_estimators=500,
-            learning_rate=0.02,
-            max_depth=4,
-            min_child_weight=5,
-            subsample=0.8,
-            colsample_bytree=0.7,
-            gamma=0.1,
-            reg_alpha=0.1,
-            reg_lambda=1.5,
+            n_estimators=params["xgboost"]["n_estimators"],
+            learning_rate=params["xgboost"]["learning_rate"],
+            max_depth=params["xgboost"]["max_depth"],
+            min_child_weight=params["xgboost"]["min_child_weight"],
+            subsample=params["xgboost"]["subsample"],
+            colsample_bytree=params["xgboost"]["colsample_bytree"],
+            gamma=params["xgboost"]["gamma"],
+            reg_alpha=params["xgboost"]["reg_alpha"],
+            reg_lambda=params["xgboost"]["reg_lambda"],
             random_state=RANDOM_SEED,
             eval_metric="auc",
         ))
@@ -703,11 +720,12 @@ def train_xgb(df_model: pd.DataFrame):
     with mlflow.start_run(run_name="xgboost_model"):
 
         mlflow.log_param("model_type", "xgboost")
-        mlflow.log_param("n_estimators", 500)
-        mlflow.log_param("learning_rate", 0.02)
-        mlflow.log_param("max_depth", 4)
-        mlflow.log_param("subsample", 0.8)
-        mlflow.log_param("colsample_bytree", 0.7)
+        # mlflow.log_param("n_estimators", 500)
+        # mlflow.log_param("learning_rate", 0.02)
+        # mlflow.log_param("max_depth", 4)
+        # mlflow.log_param("subsample", 0.8)
+        # mlflow.log_param("colsample_bytree", 0.7)
+        mlflow.log_params(params["xgboost"])
 
         mlflow.log_metric("auc", auc_score)
         mlflow.log_metric("ks", ks_score)
@@ -718,7 +736,12 @@ def train_xgb(df_model: pd.DataFrame):
         mlflow.set_tag("model_family", "tree_model")
         mlflow.set_tag("stage", "training")
 
-        mlflow.sklearn.log_model(xgb_pipeline, "xgb_model")
+        # mlflow.sklearn.log_model(xgb_pipeline, "xgb_model")
+        mlflow.sklearn.log_model(
+            xgb_pipeline,
+            "xgb_model",
+            registered_model_name="credit_risk_xgboost"
+        )
 
         mlflow.log_artifact(feature_cols_path)
 
