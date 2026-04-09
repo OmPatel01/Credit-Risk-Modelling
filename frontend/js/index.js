@@ -3,7 +3,7 @@
  * Handles navigation and page initialization for the credit risk analytics dashboard
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+// const API_BASE_URL = 'http://localhost:8000';
 
 console.log('[INDEX] Dashboard page script loaded');
 

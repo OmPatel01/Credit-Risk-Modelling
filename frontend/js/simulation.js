@@ -3,7 +3,7 @@
  * Handles Monte Carlo simulation for loss distribution analysis
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+// const API_BASE_URL = 'http://localhost:8000';
 
 const SAMPLE_PORTFOLIO = [
     {age: 35, income: 60000, employment_length: 8, credit_history_length: 15, existing_loans: 2, loan_amount: 25000, loan_tenure: 60},

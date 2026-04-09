@@ -3,7 +3,7 @@
  * Handles risk segmentation and ECL calculation
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+// const API_BASE_URL = 'http://localhost:8000';
 
 // Sample portfolio
 const SAMPLE_PORTFOLIO = [
