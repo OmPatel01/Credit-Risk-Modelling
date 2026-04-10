@@ -628,6 +628,7 @@
 .hero {
   position: relative;
   padding: 1rem 0 2rem;
+  margin-bottom: 1rem; 
 }
 
 .hero-cta-group {

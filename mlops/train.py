@@ -44,6 +44,7 @@ from xgboost import XGBClassifier
 import yaml
 import mlflow
 import mlflow.sklearn
+from mlops.evaluate import evaluate_model
 
 mlflow.set_experiment("credit_risk_model")
 
@@ -375,7 +376,6 @@ def train_scorecard():
     initial_bins = sc.woebin(train, y="DEFAULT_NEXT_MONTH", no_cores=1)
 
     # ── Step 6: Remove negative-coefficient features ──────────────
-    # First pass — fit LR with all features to identify negative coefficients
     print("\nFirst-pass LR to identify negative coefficients...")
     train_woe_init = sc.woebin_ply(train, initial_bins)
     test_woe_init  = sc.woebin_ply(test,  initial_bins)
@@ -394,7 +394,6 @@ def train_scorecard():
     negatives = coef_init[coef_init["coefficient"] < 0]["feature"].tolist()
     print(f"Negative coefficients found: {negatives}")
 
-    # Remove confirmed negative-coefficient features from raw data
     print(f"Removing: {NEGATIVE_COEF_FEATURES}")
     train_clean = train.drop(columns=NEGATIVE_COEF_FEATURES, errors="ignore")
     test_clean  = test.drop(columns=NEGATIVE_COEF_FEATURES,  errors="ignore")
@@ -412,10 +411,6 @@ def train_scorecard():
     print(f"\nFinal scorecard features: {train_final.shape[1] - 1}")
 
     # ── Step 8: WOE binning with monotonic fix ────────────────────
-    # UTILIZATION auto-binning was non-monotonic:
-    # bin [0.05, 0.50) was getting higher WOE than [0, 0.05)
-    # Manual break points enforce correct risk ordering:
-    # low utilization → low risk → low (negative) WOE
     print("\nApplying WOE binning with monotonic correction for UTILIZATION...")
     bins_final = sc.woebin(
         train_final,
@@ -449,14 +444,15 @@ def train_scorecard():
     lr_model.fit(X_train, y_train)
 
     pred_prob = lr_model.predict_proba(X_test)[:, 1]
-    auc_score = roc_auc_score(y_test, pred_prob)
-    ks_score  = calculate_ks(y_test, pred_prob)
-    gini_coef = gini(auc_score)
 
-    print(f"\n── Model Performance ─────────────────────")
-    print(f"  AUC:   {auc_score:.4f}")
-    print(f"  KS:    {ks_score:.4f}")
-    print(f"  Gini:  {gini_coef:.4f}")
+    # ── FIX: evaluate before any print that uses metrics ─────────
+    # metrics   = evaluate_model(y_test, pred_prob, model_name="scorecard_lr")
+    # gini_coef = gini(metrics["auc"])
+
+    # print(f"\n── Model Performance ─────────────────────")
+    # print(f"  AUC:   {metrics['auc']:.4f}")
+    # print(f"  KS:    {metrics['ks']:.4f}")
+    # print(f"  Gini:  {gini_coef:.4f}")
 
     # ── Step 11: Coefficient validation ──────────────────────────
     print("\n── Coefficient Check ─────────────────────")
@@ -519,7 +515,6 @@ def train_scorecard():
     print("\nDefault Rate by Score Band:")
     print(band_summary[band_summary["count"] > 0].to_string())
 
-    # Check monotonicity
     rates = band_summary[band_summary["count"] > 0]["default_rate"].values
     is_monotonic = all(rates[i] >= rates[i+1] for i in range(len(rates)-1))
     if is_monotonic:
@@ -530,63 +525,66 @@ def train_scorecard():
     # ── Step 14: Save all artifacts ───────────────────────────────
     print("\n── Saving Artifacts ──────────────────────")
 
-    # Logistic Regression model
     lr_path = os.path.join(ARTIFACTS_MODELS, "scorecard_lr_model.joblib")
     joblib.dump(lr_model, lr_path)
     print(f"  Saved: {lr_path}")
 
-    # WOE bins — needed to transform new data at inference time
     bins_path = os.path.join(ARTIFACTS_PREP, "woe_bins.joblib")
     joblib.dump(bins_final, bins_path)
     print(f"  Saved: {bins_path}")
 
-    # Scorecard points table — needed to generate credit scores
     scorecard_path = os.path.join(ARTIFACTS_PREP, "scorecard.joblib")
     joblib.dump(scorecard_table, scorecard_path)
     print(f"  Saved: {scorecard_path}")
 
-    # Feature column names — needed by API preprocessing module
     feature_cols = X_train.columns.tolist()
     feat_cols_path = os.path.join(ARTIFACTS_PREP, "feature_columns_scorecard.json")
     with open(feat_cols_path, "w") as f:
         json.dump(feature_cols, f, indent=2)
-    print(f"  Saved: {feat_cols_path}")
-    print(f"  Feature columns ({len(feature_cols)}): {feature_cols}")
 
+    # ── MLflow logging ────────────────────────────────────────────
     with mlflow.start_run(run_name="scorecard_model"):
 
+        # evaluate_model must be INSIDE the run — it calls mlflow.log_metrics internally
+        metrics   = evaluate_model(y_test, pred_prob, model_name="scorecard_lr")
+        gini_coef = gini(metrics["auc"])
+        mlflow.log_metric("gini", gini_coef)
+
+        print(f"\n── Model Performance ─────────────────────")
+        print(f"  AUC:   {metrics['auc']:.4f}")
+        print(f"  KS:    {metrics['ks']:.4f}")
+        print(f"  Gini:  {gini_coef:.4f}")
+        
         mlflow.log_param("model_type", "logistic_regression")
         mlflow.log_param("approach", "scorecard_woe")
 
         mlflow.log_params(params["logistic"])
         mlflow.log_params(params["data"])
 
-        mlflow.log_metric("auc", auc_score)
-        mlflow.log_metric("ks", ks_score)
-        mlflow.log_metric("gini", gini_coef)
-
         mlflow.set_tag("project", "credit_risk")
         mlflow.set_tag("model_family", "scorecard")
         mlflow.set_tag("stage", "training")
 
-        # mlflow.sklearn.log_model(lr_model, "scorecard_model")
         mlflow.sklearn.log_model(
             lr_model,
             "scorecard_model",
-            registered_model_name="credit_risk_scorecard"
+            registered_model_name="credit_risk_scorecard",
         )
 
-        mlflow.log_artifact(lr_path)        # logs the .joblib to MLflow run
+        mlflow.log_artifact(lr_path)
         mlflow.log_artifact(bins_path)
         mlflow.log_artifact(scorecard_path)
         mlflow.log_artifact(feat_cols_path)
+
+    print(f"  Saved: {feat_cols_path}")
+    print(f"  Feature columns ({len(feature_cols)}): {feature_cols}")
 
     # ── Final summary ─────────────────────────────────────────────
     print("\n══════════════════════════════════════════")
     print("  TRAINING COMPLETE")
     print("══════════════════════════════════════════")
-    print(f"  AUC:              {auc_score:.4f}")
-    print(f"  KS Statistic:     {ks_score:.4f}")
+    print(f"  AUC:              {metrics['auc']:.4f}")
+    print(f"  KS Statistic:     {metrics['ks']:.4f}")
     print(f"  Gini Coefficient: {gini_coef:.4f}")
     print(f"  Score range:      {test_scores['score'].min():.0f} – "
           f"{test_scores['score'].max():.0f}")
@@ -595,12 +593,13 @@ def train_scorecard():
     print("══════════════════════════════════════════")
 
     return {
-        "auc":       auc_score,
-        "ks":        ks_score,
+        "auc":       metrics["auc"],
+        "ks":        metrics["ks"],
         "gini":      gini_coef,
         "features":  feature_cols,
         "monotonic": is_monotonic,
     }
+
 
 def train_xgb(df_model: pd.DataFrame):
     """
@@ -626,7 +625,7 @@ def train_xgb(df_model: pd.DataFrame):
         X, y,
         test_size=TEST_SIZE,
         stratify=y,
-        random_state=RANDOM_SEED
+        random_state=RANDOM_SEED,
     )
 
     print(f"Train: {len(X_train):,} | Test: {len(X_test):,}")
@@ -662,12 +661,12 @@ def train_xgb(df_model: pd.DataFrame):
     # ── Step 5: Evaluation ─────────────────────────
     xgb_proba = xgb_pipeline.predict_proba(X_test)[:, 1]
 
-    auc_score = roc_auc_score(y_test, xgb_proba)
-    ks_score = calculate_ks(y_test, xgb_proba)
+    # ── FIX: evaluate before any print that uses metrics ─────────
+    # metrics = evaluate_model(y_test, xgb_proba, model_name="xgboost")
 
-    print("\n── Model Performance ─────────────────────")
-    print(f"  AUC: {auc_score:.4f}")
-    print(f"  KS:  {ks_score:.4f}")
+    # print("\n── Model Performance ─────────────────────")
+    # print(f"  AUC: {metrics['auc']:.4f}")
+    # print(f"  KS:  {metrics['ks']:.4f}")
 
     # ── Cross Validation ───────────────────────────
     print("\n⏳ Running 5-fold CV...")
@@ -677,7 +676,7 @@ def train_xgb(df_model: pd.DataFrame):
         y_train,
         cv=5,
         scoring="roc_auc",
-        n_jobs=-1
+        n_jobs=-1,
     )
 
     print(f"CV Mean: {cv_scores.mean():.4f}")
@@ -690,7 +689,7 @@ def train_xgb(df_model: pd.DataFrame):
 
     feat_imp = pd.Series(
         xgb_pipeline.named_steps["model"].feature_importances_,
-        index=feature_names
+        index=feature_names,
     ).sort_values(ascending=False)
 
     print("\nTop 10 Features:")
@@ -705,42 +704,35 @@ def train_xgb(df_model: pd.DataFrame):
     os.makedirs(ARTIFACTS_MODELS, exist_ok=True)
     os.makedirs(ARTIFACTS_PREP, exist_ok=True)
 
-    # Save model
     model_path = os.path.join(ARTIFACTS_MODELS, "xgb_pipeline.joblib")
     joblib.dump(xgb_pipeline, model_path)
     print(f"  Saved: {model_path}")
 
-    # Save feature columns
     feature_cols_path = os.path.join(ARTIFACTS_PREP, "feature_columns_xgb.json")
     with open(feature_cols_path, "w") as f:
         json.dump(feature_names, f, indent=2)
-
     print(f"  Saved: {feature_cols_path}")
 
+    # ── MLflow logging ────────────────────────────────────────────
     with mlflow.start_run(run_name="xgboost_model"):
 
-        mlflow.log_param("model_type", "xgboost")
-        # mlflow.log_param("n_estimators", 500)
-        # mlflow.log_param("learning_rate", 0.02)
-        # mlflow.log_param("max_depth", 4)
-        # mlflow.log_param("subsample", 0.8)
-        # mlflow.log_param("colsample_bytree", 0.7)
-        mlflow.log_params(params["xgboost"])
+        # evaluate_model must be INSIDE the run — it calls mlflow.log_metrics internally
+        metrics = evaluate_model(y_test, xgb_proba, model_name="xgboost")
 
-        mlflow.log_metric("auc", auc_score)
-        mlflow.log_metric("ks", ks_score)
+        mlflow.log_param("model_type", "xgboost")
+        mlflow.log_params(params["xgboost"])
         mlflow.log_metric("cv_mean_auc", cv_scores.mean())
+        mlflow.log_metric("cv_mean_auc", cv_scores.mean())  # FIX: removed duplicate pair
         mlflow.log_metric("cv_std_auc", cv_scores.std())
 
         mlflow.set_tag("project", "credit_risk")
         mlflow.set_tag("model_family", "tree_model")
         mlflow.set_tag("stage", "training")
 
-        # mlflow.sklearn.log_model(xgb_pipeline, "xgb_model")
         mlflow.sklearn.log_model(
             xgb_pipeline,
             "xgb_model",
-            registered_model_name="credit_risk_xgboost"
+            registered_model_name="credit_risk_xgboost",
         )
 
         mlflow.log_artifact(feature_cols_path)
@@ -748,12 +740,17 @@ def train_xgb(df_model: pd.DataFrame):
     print("\n══════════════════════════════════════════")
     print("  XGBOOST TRAINING COMPLETE")
     print("══════════════════════════════════════════")
+    print(f"  AUC:      {metrics['auc']:.4f}")
+    print(f"  KS:       {metrics['ks']:.4f}")
+    print(f"  CV Mean:  {cv_scores.mean():.4f}")
+    print(f"  CV Std:   {cv_scores.std():.4f}")
+    print("══════════════════════════════════════════")
 
     return {
-        "auc": float(auc_score),
-        "ks": float(ks_score),
-        "cv_mean": float(cv_scores.mean()),
-        "cv_std": float(cv_scores.std()),
+        "auc":      float(metrics["auc"]),
+        "ks":       float(metrics["ks"]),
+        "cv_mean":  float(cv_scores.mean()),
+        "cv_std":   float(cv_scores.std()),
         "features": feature_names,
     }
 

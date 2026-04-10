@@ -5,6 +5,7 @@
    =================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@600;700&family=Syne:wght@600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
 * {
   margin: 0;
@@ -119,14 +120,19 @@ nav {
 }
 
 .nav-brand {
-  font-family: var(--font-display);
-  font-size: 1rem;
-  font-weight: 700;
+  font-family: 'Inter', sans-serif;  
+  font-size: 1.25rem;
+  font-weight: 800;
   color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nav-brand span {
+  color: var(--acid);
 }
 
 .nav-brand-dot {
@@ -151,14 +157,15 @@ nav {
 }
 
 .nav-link {
-  color: var(--text-secondary);
+  /* color: var(--text-secondary); */
+  color: #9fb3d1;   /* slightly brighter */
   cursor: pointer;
   transition: var(--transition);
   padding: 0 1.1rem;
   display: flex;
   align-items: center;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   letter-spacing: 0.04em;
   border-bottom: 2px solid transparent;
   position: relative;
@@ -166,12 +173,13 @@ nav {
 
 .nav-link:hover {
   color: var(--text-primary);
-  border-bottom-color: var(--border-accent);
+  border-bottom-color: var(--acid);
 }
 
 .nav-link.active {
   color: var(--acid);
   border-bottom-color: var(--acid);
+  font-weight: 600;
 }
 
 /* ===================================================
@@ -190,16 +198,16 @@ main {
    =================================================== */
 
 .page-header {
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
 }
 
 .page-title {
-  font-family: var(--font-display);
+  font-family: 'Inter', sans-serif;
   font-size: clamp(2rem, 4vw, 3.2rem);
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
   margin-bottom: 0.75rem;
 }
 
@@ -221,7 +229,7 @@ main {
    =================================================== */
 
 section {
-  margin-bottom: 3.5rem;
+  margin-bottom: 3rem;
 }
 
 .section-title {

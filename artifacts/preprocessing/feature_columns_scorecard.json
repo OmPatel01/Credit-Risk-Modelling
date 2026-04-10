@@ -1,12 +1,12 @@
 [
-  "BILL_GROWTH_woe",
-  "LIMIT_BAL_woe",
-  "AGE_woe",
-  "NUM_ZERO_PAYMENTS_woe",
-  "PAST_DELAY_AVG_woe",
-  "UTILIZATION_woe",
-  "MAX_DELAY_woe",
   "AVG_PAY_BILL_RATIO_woe",
   "PAY_AMT1_woe",
+  "NUM_ZERO_PAYMENTS_woe",
+  "AGE_woe",
+  "MAX_DELAY_woe",
+  "PAST_DELAY_AVG_woe",
+  "UTILIZATION_woe",
+  "LIMIT_BAL_woe",
+  "BILL_GROWTH_woe",
   "PAY_0_woe"
 ]
