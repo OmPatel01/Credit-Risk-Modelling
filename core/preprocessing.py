@@ -1,15 +1,18 @@
 """
-preprocessing.py
-----------------
-Handles all data transformation before prediction.
+core/preprocessing.py
+---------------------
+All data transformation logic that runs between raw API input and model inference.
 
-This module is responsible for:
-1. Loading WOE bins from artifacts
-2. Applying WOE transformation to new input data
-3. Validating that required features are present
+Responsibilities:
+    1. Load frozen training artifacts (WOE bins, feature column lists)
+    2. Apply the same feature engineering that was used during model training
+    3. Apply WOE transformation required by the scorecard/LR model
+    4. Assemble the final feature matrices for each model
 
-The WOE bins were fitted on the training set in the notebook.
-They must be loaded here — never recomputed on new data.
+IMPORTANT — data leakage guard:
+    WOE bins and the scorecard table are NEVER recomputed on inference data.
+    They are loaded from disk (fitted on training data only) and applied as
+    a fixed lookup. Any change to binning logic must go through mlops/train.py.
 """
 
 import json
@@ -25,37 +28,40 @@ from core.config import (
 )
 
 
+# ── Artifact loaders — thin wrappers so callers don't need to know file formats
+
 def load_woe_bins():
-    """Load WOE bins from artifact file."""
+    """Deserialise the scorecardpy bin definitions saved during training."""
     return joblib.load(WOE_BINS_PATH)
 
 
 def load_scorecard_feature_columns():
-    """Load the exact feature columns used in the scorecard model."""
+    """Return the ordered list of WOE column names expected by the LR model.
+    Note: names already carry the '_woe' suffix (e.g. 'PAY_0_woe') — do not append it again."""
     with open(SCORECARD_FEATURE_COLS_PATH, "r") as f:
         return json.load(f)
 
 
 def load_xgb_feature_columns():
-    """Load the exact feature columns used in the XGBoost model."""
+    """Return the ordered list of raw engineered feature names expected by the XGBoost pipeline."""
     with open(XGB_FEATURE_COLS_PATH, "r") as f:
         return json.load(f)
 
 
+# ── Feature engineering — must mirror mlops/train.py:engineer_features() exactly.
+# Any divergence between training and inference engineering causes silent model degradation.
+
 def engineer_features(raw_input: dict) -> pd.DataFrame:
     """
-    Apply feature engineering to raw input — same logic as the notebook.
+    Derive all model features from the raw 21-column client record.
 
-    Parameters
-    ----------
-    raw_input : dict
-        Raw input fields from the API request.
-        Must contain the original dataset features.
+    The raw input contains the original dataset columns (LIMIT_BAL, AGE,
+    PAY_0..PAY_6, BILL_AMT1..6, PAY_AMT1..6, EDUCATION).
+    This function adds 15+ engineered columns that capture repayment behaviour,
+    billing trends, and utilisation — the same ones built during training.
 
-    Returns
-    -------
-    pd.DataFrame
-        Single-row dataframe with all engineered features.
+    Returns a single-row DataFrame ready for either WOE transform (scorecard)
+    or direct ingestion (XGBoost pipeline).
     """
     df = pd.DataFrame([raw_input])
 
@@ -65,34 +71,52 @@ def engineer_features(raw_input: dict) -> pd.DataFrame:
     pay_amt_cols  = ["PAY_AMT1", "PAY_AMT2", "PAY_AMT3",
                      "PAY_AMT4", "PAY_AMT5", "PAY_AMT6"]
 
-    # ── Repayment behaviour features ─────────────────────────────
+    # ── Repayment behaviour — captures severity, frequency, and trend of delinquency
+
+    # Worst single month across the full 6-month window — strongest default predictor
     df["MAX_DELAY"]        = df[pay_cols].max(axis=1)
+
+    # Count of months where client was actually overdue (PAY_X >= 1 means n months late)
     df["NUM_DELAYS"]       = (df[pay_cols] >= 1).sum(axis=1)
+
+    # Binary flag: 1 if any delinquency occurred in the window, 0 if clean throughout
     df["ANY_DELAY_FLAG"]   = (df[pay_cols] >= 1).any(axis=1).astype(int)
+
+    # Average delay over older months (PAY_2..PAY_6); PAY_0 excluded to avoid
+    # double-counting the most recent month which is already in MAX_DELAY
     df["PAST_DELAY_AVG"]   = df[["PAY_2","PAY_3","PAY_4","PAY_5","PAY_6"]].mean(axis=1)
 
-    # ── Billing features ──────────────────────────────────────────
+    # ── Billing features — tracks outstanding balance level and direction
+
+    # Mean bill across 6 months; replaces 6 highly collinear raw BILL_AMT columns (r > 0.90)
     df["AVG_BILL_AMT"] = df[bill_cols].mean(axis=1)
+
+    # Positive = balance growing (client accumulating debt); negative = shrinking
     df["BILL_GROWTH"]  = df["BILL_AMT1"] - df["BILL_AMT6"]
 
-    # ── Payment features ──────────────────────────────────────────
+    # ── Payment features — how many months did the client make zero payment?
+    # NUM_ZERO_PAYMENTS is a strong default signal: chronic non-payers default far more often
     df["NUM_ZERO_PAYMENTS"] = (df[pay_amt_cols] == 0).sum(axis=1)
 
-    # ── Ratio features ────────────────────────────────────────────
+    # ── Ratio features — what fraction of each bill was actually repaid?
+    # Ratio = 0 when BILL_AMT = 0 (no outstanding balance); ratio is capped at p99
+    # of training data (≈15) to prevent extreme outliers from distorting the model
     for i in range(1, 7):
         df[f"PAY_BILL_RATIO_{i}"] = np.where(
             df[f"BILL_AMT{i}"] > 0,
             df[f"PAY_AMT{i}"] / df[f"BILL_AMT{i}"],
             0
         )
-        # Clip extreme outliers — same as notebook
-        p99 = 15.0
+        p99 = 15.0  # hard cap matching training-time clipping; do NOT change without retraining
         df[f"PAY_BILL_RATIO_{i}"] = df[f"PAY_BILL_RATIO_{i}"].clip(upper=p99)
 
     ratio_cols = [f"PAY_BILL_RATIO_{i}" for i in range(1, 7)]
+
+    # Smoothed repayment coverage across all 6 months — reduces noise from single-month anomalies
     df["AVG_PAY_BILL_RATIO"] = df[ratio_cols].mean(axis=1)
 
-    # ── Exposure features ─────────────────────────────────────────
+    # ── Exposure features — how much of the credit limit is being used?
+    # Capped at 1.05 to handle edge cases where balance slightly exceeds the limit
     df["UTILIZATION"] = df["AVG_BILL_AMT"] / df["LIMIT_BAL"].replace(0, 1)
     df["UTILIZATION"] = df["UTILIZATION"].clip(upper=1.05)
 
@@ -101,64 +125,35 @@ def engineer_features(raw_input: dict) -> pd.DataFrame:
 
 def apply_woe_transform(df: pd.DataFrame, bins: dict) -> pd.DataFrame:
     """
-    Apply WOE transformation using pre-fitted bins.
+    Replace raw feature values with their Weight-of-Evidence scores using frozen training bins.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Feature-engineered dataframe (output of engineer_features).
-    bins : dict
-        WOE bins loaded from artifacts.
-
-    Returns
-    -------
-    pd.DataFrame
-        WOE-transformed dataframe ready for scorecard LR model.
+    scorecardpy's woebin_ply expects a target column to be present even at inference time —
+    we inject a dummy zero column that is immediately dropped after transformation.
+    The resulting _woe columns are what the LR model was trained on.
     """
-    # scorecardpy expects a dummy target column for woebin_ply
-    # we add a placeholder — it is not used during transform
-    df["DEFAULT_NEXT_MONTH"] = 0
+    df["DEFAULT_NEXT_MONTH"] = 0   # placeholder — required by scorecardpy API, not used in transform
     woe_df = sc.woebin_ply(df, bins)
     woe_df = woe_df.drop(columns=["DEFAULT_NEXT_MONTH"], errors="ignore")
     return woe_df
 
 
-# def prepare_scorecard_input(raw_input: dict, bins: dict,
-#                              feature_cols: list) -> pd.DataFrame:
-#     """
-#     Full preprocessing pipeline for the scorecard model.
-
-#     Steps:
-#     1. Engineer features
-#     2. Apply WOE transformation
-#     3. Select and order scorecard feature columns
-
-#     Returns
-#     -------
-#     pd.DataFrame
-#         Single-row WOE-transformed dataframe with scorecard features only.
-#     """
-#     df_engineered = engineer_features(raw_input)
-#     df_woe        = apply_woe_transform(df_engineered.copy(), bins)
-
-#     # Keep only scorecard features in correct order
-#     # woe_cols = [f"{c}_woe" for c in feature_cols]
-#     available = [c for c in woe_cols if c in df_woe.columns]
-#     return df_woe[available]
-
 def prepare_scorecard_input(raw_input: dict, bins: dict,
                              feature_cols: list) -> pd.DataFrame:
     """
-    Full preprocessing pipeline for the scorecard model.
+    Full preprocessing pipeline for the scorecard (LR) model.
 
-    feature_cols from JSON already have _woe suffix.
-    Do NOT add _woe again — use them directly as column names.
+    Pipeline: raw dict → engineer_features → WOE transform → select & order columns.
+
+    feature_cols comes from feature_columns_scorecard.json and already contains the
+    '_woe' suffix — do NOT add '_woe' here or columns will not be found.
+
+    Raises ValueError if none of the expected WOE columns exist in the transformed
+    output, which indicates a mismatch between saved bins and the current feature set.
     """
     df_engineered = engineer_features(raw_input)
     df_woe        = apply_woe_transform(df_engineered.copy(), bins)
 
     # feature_cols already contains _woe suffix (e.g. 'PAY_0_woe')
-    # so use them directly — do NOT do f"{c}_woe"
     available = [c for c in feature_cols if c in df_woe.columns]
 
     if not available:
@@ -170,19 +165,17 @@ def prepare_scorecard_input(raw_input: dict, bins: dict,
 
     return df_woe[available]
 
+
 def prepare_xgb_input(raw_input: dict, feature_cols: list) -> pd.DataFrame:
     """
     Full preprocessing pipeline for the XGBoost model.
 
-    Steps:
-    1. Engineer features
-    2. Select XGBoost feature columns (no WOE needed)
-
-    Returns
-    -------
-    pd.DataFrame
-        Single-row dataframe ready for the XGBoost pipeline.
+    XGBoost's Pipeline object handles OrdinalEncoding internally, so only
+    feature engineering is needed here — no WOE transformation.
     """
     df_engineered = engineer_features(raw_input)
+
+    # Silently skip any column in feature_cols that didn't survive engineering
+    # (shouldn't happen in production, but avoids a hard crash during debugging)
     available = [c for c in feature_cols if c in df_engineered.columns]
     return df_engineered[available]

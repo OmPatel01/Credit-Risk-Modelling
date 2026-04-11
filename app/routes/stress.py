@@ -1,16 +1,21 @@
-#   app/routes/stress.py
+"""
+app/routes/stress.py
+--------------------
+HTTP route for the stress testing (scenario analysis) endpoint.
+
+Delegates to scenario_service.run_stress_test.
+Stress scenarios are predefined in services/risk_config.py — callers cannot
+define custom scenarios via this API; they can only configure PD/LGD inputs
+and whether to also run Monte Carlo under each scenario.
+"""
+
 from fastapi import APIRouter, HTTPException
 import logging
 
-from app.schemas.risk_schemas import (
-    StressTestRequest,
-    StressTestResponse,
-)
+from app.schemas.risk_schemas import StressTestRequest, StressTestResponse
 from services.scenario_service import run_stress_test
 
 router = APIRouter()
-
-# 🔥 Create logger
 logger = logging.getLogger(__name__)
 
 
@@ -21,11 +26,9 @@ logger = logging.getLogger(__name__)
     summary="Scenario Analysis (Stress Testing)",
 )
 def stress_test(request: StressTestRequest):
+    """Apply predefined stress scenarios (Base / Mild / Severe) to the portfolio and return ECL changes."""
     try:
-        # 🔹 Log request received
         logger.info("[STRESS] Request received")
-
-        # 🔹 Log input summary (avoid full data dump)
         logger.debug(
             f"[STRESS] Inputs → "
             f"PD count: {len(request.pd_values)}, "
@@ -36,7 +39,6 @@ def stress_test(request: StressTestRequest):
             f"Seed: {request.seed}"
         )
 
-        # 🔹 Run stress test
         logger.info("[STRESS] Running stress scenario analysis...")
         result = run_stress_test(
             pd_values=request.pd_values,
@@ -47,15 +49,9 @@ def stress_test(request: StressTestRequest):
             seed=request.seed,
         )
 
-        # 🔹 Log result summary (safe fields only)
         logger.info(f"[STRESS] Completed → scenarios: {len(result['scenarios'])}")
-
         return result
 
     except Exception as e:
-        # 🔴 Proper error logging
-        logger.error(
-            f"[STRESS] Error occurred: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"[STRESS] Error occurred: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))

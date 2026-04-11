@@ -1,15 +1,21 @@
+"""
+app/routes/sensitivity.py
+--------------------------
+HTTP route for the sensitivity analysis endpoint.
+
+Delegates to sensitivity_service.run_sensitivity_analysis.
+Unlike stress testing (which uses fixed named scenarios), sensitivity analysis
+accepts custom shift arrays from the caller — useful for ad-hoc "what if PD
+were 5% higher?" exploration without modifying config files.
+"""
+
 from fastapi import APIRouter, HTTPException
 import logging
 
-from app.schemas.risk_schemas import (
-    SensitivityRequest,
-    SensitivityResponse,
-)
+from app.schemas.risk_schemas import SensitivityRequest, SensitivityResponse
 from services.sensitivity_service import run_sensitivity_analysis
 
 router = APIRouter()
-
-# 🔥 Logger
 logger = logging.getLogger(__name__)
 
 
@@ -20,11 +26,9 @@ logger = logging.getLogger(__name__)
     summary="Sensitivity Analysis",
 )
 def sensitivity_analysis(request: SensitivityRequest):
+    """Sweep PD and LGD shifts and return ECL change at each shift level relative to the unmodified baseline."""
     try:
-        # 🔹 Request received
         logger.info("[SENSITIVITY] Request received")
-
-        # 🔹 Input summary (safe logging)
         logger.debug(
             f"[SENSITIVITY] Inputs → "
             f"PD count: {len(request.pd_values)}, "
@@ -37,7 +41,6 @@ def sensitivity_analysis(request: SensitivityRequest):
             f"Seed: {request.seed}"
         )
 
-        # 🔹 Run sensitivity analysis
         logger.info("[SENSITIVITY] Running sensitivity analysis...")
         result = run_sensitivity_analysis(
             pd_values=request.pd_values,
@@ -50,18 +53,9 @@ def sensitivity_analysis(request: SensitivityRequest):
             seed=request.seed,
         )
 
-        # 🔹 Log result summary (high-level only)
-        logger.info(
-            f"[SENSITIVITY] Completed → "
-            f"Results: {len(result['results'])}"
-        )
-
+        logger.info(f"[SENSITIVITY] Completed → Results: {len(result['results'])}")
         return result
 
     except Exception as e:
-        # 🔴 Proper error logging
-        logger.error(
-            f"[SENSITIVITY] Error occurred: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"[SENSITIVITY] Error occurred: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))

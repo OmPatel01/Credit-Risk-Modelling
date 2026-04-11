@@ -1,29 +1,37 @@
 """
-train.py
-------------------
-Training script for the WOE Logistic Regression Scorecard model and XGBoost model.
+mlops/train.py
+--------------
+Full end-to-end training pipeline for both the champion scorecard model and the
+XGBoost challenger model. Running this script reproduces all training artifacts
+from scratch using only the raw data file.
 
-This script reproduces the full scorecard development pipeline
-from the notebook in a clean, runnable Python file.
-
-Steps:
-    1.  Load and clean raw data
-    2.  Feature engineering
-    3.  Feature selection (drop redundant/weak features)
-    4.  Train/test split
-    5.  Initial WOE binning + IV analysis
-    6.  Remove negative-coefficient features
-    7.  Remove highly correlated features
-    8.  Fix non-monotonic WOE bins
-    9.  Final WOE transform
-    10. Fit final Logistic Regression
-    11. Coefficient validation
-    12. Build scorecard points table
-    13. Score test set + validate monotonicity
-    14. Save all artifacts
+Pipeline stages (in order):
+    1.  Load + clean raw XLS data (remap undocumented category codes, drop ID)
+    2.  Feature engineering (derive 15+ behavioural features from raw columns)
+    3.  Feature selection (remove collinear, weak, and leaky columns)
+    4.  Train/test split (stratified on target to preserve default rate)
+    5.  Initial WOE binning + IV analysis to identify informative features
+    6.  First-pass LR to detect and remove negative-coefficient features
+    7.  Remove highly correlated features (per correlation matrix analysis)
+    8.  Re-bin with manual breaks to enforce WOE monotonicity (UTILIZATION)
+    9.  Final WOE transformation of train and test sets
+    10. Fit final Logistic Regression on WOE features
+    11. Validate all coefficients are positive (required for a valid scorecard)
+    12. Build scorecard points table from LR coefficients + WOE bins
+    13. Score test set and verify default rate decreases as score increases (monotonicity)
+    14. Save all artifacts to disk + log to MLflow
+    Then repeat steps 1–3 and run XGBoost training on the same processed data.
 
 Usage:
     python mlops/train.py
+
+Artifacts produced:
+    artifacts/models/scorecard_lr_model.joblib
+    artifacts/models/xgb_pipeline.joblib
+    artifacts/preprocessing/woe_bins.joblib
+    artifacts/preprocessing/scorecard.joblib
+    artifacts/preprocessing/feature_columns_scorecard.json
+    artifacts/preprocessing/feature_columns_xgb.json
 """
 
 import os
@@ -48,59 +56,63 @@ from mlops.evaluate import evaluate_model
 
 mlflow.set_experiment("credit_risk_model")
 
-# ── Paths ────────────────────────────────────────────────────────
+# ── Path setup — all paths resolved from this file's location so the script
+# works regardless of the working directory it's launched from
 ROOT_DIR         = Path(__file__).resolve().parent.parent
 MLFLOW_DIR       = ROOT_DIR / "mlflow"
 DATA_PATH        = str(ROOT_DIR / "data" / "raw" / "credit_risk.xls")
 ARTIFACTS_MODELS = str(ROOT_DIR / "artifacts" / "models")
 ARTIFACTS_PREP   = str(ROOT_DIR / "artifacts" / "preprocessing")
 
-# ── MLflow setup ─────────────────────────────────────────────────
+# ── MLflow — use a local filesystem URI (no database server required)
 os.makedirs(MLFLOW_DIR, exist_ok=True)
-
-# Point to absolute folder path — no SQLite, no database
 mlflow.set_tracking_uri(MLFLOW_DIR.as_uri())
 mlflow.set_experiment("credit_risk_model")
 
 print(f"MLflow tracking URI: {mlflow.get_tracking_uri()}")
 
-
+# ── Hyperparameters — loaded from params.yaml so DVC can track and version them.
+# Never hardcode hyperparameters in training code; params.yaml is the single source.
 with open("params.yaml") as f:
     params = yaml.safe_load(f)
-
-# ══════════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ══════════════════════════════════════════════════════════════════
 
 DATA_PATH        = "data/raw/credit_risk.xls"
 ARTIFACTS_MODELS = "artifacts/models"
 ARTIFACTS_PREP   = "artifacts/preprocessing"
 
-# Scorecard calibration
-POINTS0     = 600   # base score for average-risk client
-PDO         = 50    # points to double odds — higher = wider range
-# TEST_SIZE   = 0.2
-# RANDOM_SEED = 42
-# LR_C        = 1.0   # logistic regression regularization
-# LR_MAX_ITER = 1000
+# ── Scorecard calibration — controls the score range and sensitivity
+# POINTS0: score assigned to a borrower with average odds (non-default/default ratio)
+# PDO: how many points correspond to a doubling of odds (higher = wider score spread)
+POINTS0 = 600
+PDO     = 50
+
 TEST_SIZE   = params["data"]["test_size"]
 RANDOM_SEED = params["data"]["random_seed"]
 LR_C        = params["logistic"]["C"]
 LR_MAX_ITER = params["logistic"]["max_iter"]
-# Features removed because of negative WOE coefficients or low IV
+
+# ── Features excluded after first-pass LR coefficient inspection
+# These three were identified during initial model development:
+#   PAY_BILL_RATIO_1 → negative coefficient; its variance overlaps with NUM_ZERO_PAYMENTS
+#   AVG_BILL_AMT     → negative coefficient; captured better by UTILIZATION (credit-limit-normalised)
+#   EDUCATION        → near-zero coefficient and low IV (0.036); not worth the regulatory scrutiny
 NEGATIVE_COEF_FEATURES = [
-    "PAY_BILL_RATIO_1",  # negative coef — overlaps NUM_ZERO_PAYMENTS
-    "AVG_BILL_AMT",      # negative coef — overlaps UTILIZATION
-    "EDUCATION",         # near-zero coef — low IV (0.036)
+    "PAY_BILL_RATIO_1",
+    "AVG_BILL_AMT",
+    "EDUCATION",
 ]
 
-# Features removed due to high correlation with a stronger feature
+# ── Features excluded due to high inter-feature correlation
+# NUM_DELAYS (r=0.75 with MAX_DELAY) is redundant when MAX_DELAY is present;
+# keeping both would inflate the coefficient of the collinear pair and reduce interpretability
 CORRELATED_FEATURES = [
-    "NUM_DELAYS",        # r=0.75 with MAX_DELAY — MAX_DELAY is stronger
+    "NUM_DELAYS",
 ]
 
-# Manual WOE bin break points to enforce monotonic risk ordering
-# UTILIZATION bins were non-monotonic in auto-binning
+# ── Manual WOE bin boundaries to enforce monotonic risk ordering
+# Auto-binning produced non-monotonic WOE for UTILIZATION (some middle bins had lower
+# default rates than adjacent bins, which violates scorecard intuition).
+# Manual breaks force the bins into a sensible low→medium→high→very-high structure.
 MANUAL_BREAKS = {
     "UTILIZATION": [0.10, 0.50, 0.80],
 }
@@ -112,10 +124,11 @@ MANUAL_BREAKS = {
 
 def calculate_ks(y_true, y_pred_prob: np.ndarray) -> float:
     """
-    KS (Kolmogorov-Smirnov) statistic.
-    Measures maximum separation between default and non-default
-    cumulative distributions.
-    Industry benchmark: KS > 0.40 = good model.
+    KS statistic — maximum gap between cumulative default and non-default rate curves.
+
+    Duplicated here (also in core/utils.py and mlops/evaluate.py) so this script
+    remains self-contained and can be run without importing from the API layer.
+    Industry benchmark: KS > 0.40 = good; KS > 0.50 = strong.
     """
     data = pd.DataFrame({"target": y_true, "prob": y_pred_prob})
     data = data.sort_values("prob", ascending=False)
@@ -127,7 +140,12 @@ def calculate_ks(y_true, y_pred_prob: np.ndarray) -> float:
 
 
 def gini(auc: float) -> float:
-    """Gini = 2 × AUC − 1. Used in Basel II IRB context."""
+    """
+    Gini coefficient derived from AUC: Gini = 2 × AUC − 1.
+
+    Gini is the standard discrimination metric in Basel II IRB models.
+    A Gini of 0 = random model; 1 = perfect model; typical retail models: 0.40–0.65.
+    """
     return round(2 * auc - 1, 4)
 
 
@@ -137,17 +155,20 @@ def gini(auc: float) -> float:
 
 def load_and_clean(path: str) -> pd.DataFrame:
     """
-    Load raw XLS file and apply data cleaning:
-    - Remove duplicate header row (row 0 is a string copy of headers)
-    - Cast numeric columns
-    - Remap undocumented EDUCATION codes (0,5,6 → 4 = Others)
-    - Remap undocumented MARRIAGE code  (0 → 3 = Others)
-    - Drop ID column
+    Load the raw XLS file, rename cryptic column codes, and fix data quality issues.
+
+    Data quality issues addressed:
+        - Row 0 is a duplicate of the header (string copy) — removed via iloc[1:]
+        - EDUCATION codes 0, 5, 6 are undocumented in the dataset description
+          → remapped to 4 (Others) to avoid spurious category splits during WOE binning
+        - MARRIAGE code 0 is similarly undocumented → remapped to 3 (Others)
+        - ID column provides no predictive signal and must be dropped before any modelling
     """
     print("Loading data...")
     df = pd.read_excel(path)
 
-    # Rename X1..X23 columns to human-readable names
+    # Original columns are labelled X1..X23 — rename to human-readable names
+    # that match the preprocessing pipeline's expected column names
     rename_dict = {
         "Unnamed: 0": "ID",
         "X1": "LIMIT_BAL", "X2": "GENDER",   "X3": "EDUCATION",
@@ -162,10 +183,9 @@ def load_and_clean(path: str) -> pd.DataFrame:
     }
     df = df.rename(columns=rename_dict)
 
-    # Remove duplicate header row
+    # First data row is actually a second header (string copies of column names) — drop it
     df = df.iloc[1:].reset_index(drop=True)
 
-    # Cast numeric columns
     num_cols = [
         "LIMIT_BAL", "AGE",
         "PAY_0","PAY_2","PAY_3","PAY_4","PAY_5","PAY_6",
@@ -175,16 +195,12 @@ def load_and_clean(path: str) -> pd.DataFrame:
     df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
     df["DEFAULT_NEXT_MONTH"] = df["DEFAULT_NEXT_MONTH"].astype(int)
 
-    # Remap undocumented category codes
-    # EDUCATION: codes 0, 5, 6 are not in the data dictionary → map to Others (4)
+    # Remap undocumented category codes to the catch-all "Others" bucket
+    # so WOE binning doesn't create meaningless singleton bins
     df["EDUCATION"] = df["EDUCATION"].replace([0, 5, 6], 4)
-
-    # MARRIAGE: code 0 is not in the data dictionary → map to Others (3)
     df["MARRIAGE"]  = df["MARRIAGE"].replace(0, 3)
 
-    # Drop ID — not a predictor
-    if "ID" in df.columns:
-        df = df.drop(columns=["ID"])
+    df = df.drop(columns=["ID"]) if "ID" in df.columns else df
 
     print(f"Data loaded: {df.shape[0]:,} rows, {df.shape[1]} columns")
     print(f"Default rate: {df['DEFAULT_NEXT_MONTH'].mean():.3f}")
@@ -197,9 +213,15 @@ def load_and_clean(path: str) -> pd.DataFrame:
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Create all derived features used in the scorecard model.
-    Same logic as the notebook — centralised here for consistency
-    with the API preprocessing module.
+    Create all derived features used by both models.
+
+    Must be kept in exact sync with core/preprocessing.py:engineer_features().
+    Any divergence between training and inference engineering silently degrades predictions.
+    See core/preprocessing.py for detailed comments on each feature's purpose.
+
+    Note: training adds a few extra columns (PAYMENT_STD, per-month zero flags) that are
+    later dropped in select_features(). These are omitted from the inference version to
+    avoid computing unused columns at prediction time.
     """
     df = df.copy()
 
@@ -209,58 +231,41 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     pay_amt_cols = ["PAY_AMT1","PAY_AMT2","PAY_AMT3",
                     "PAY_AMT4","PAY_AMT5","PAY_AMT6"]
 
-    # ── Repayment behaviour ──────────────────────────────────────
-    # MAX_DELAY: worst-case delinquency event across 6 months
+    # ── Repayment behaviour
     df["MAX_DELAY"]      = df[pay_cols].max(axis=1)
-
-    # NUM_DELAYS: frequency of delinquency (months with delay >= 1)
     df["NUM_DELAYS"]     = (df[pay_cols] >= 1).sum(axis=1)
-
-    # ANY_DELAY_FLAG: binary clean vs delinquent segmentation
     df["ANY_DELAY_FLAG"] = (df[pay_cols] >= 1).any(axis=1).astype(int)
-
-    # PAST_DELAY_AVG: average delay excluding most recent month
     df["PAST_DELAY_AVG"] = df[["PAY_2","PAY_3","PAY_4","PAY_5","PAY_6"]].mean(axis=1)
 
-    # ── Billing features ─────────────────────────────────────────
-    # AVG_BILL_AMT: smoothed debt exposure (replaces 6 collinear BILL_AMTs)
+    # ── Billing
     df["AVG_BILL_AMT"] = df[bill_cols].mean(axis=1)
-
-    # BILL_GROWTH: is the outstanding balance growing or shrinking?
     df["BILL_GROWTH"]  = df["BILL_AMT1"] - df["BILL_AMT6"]
 
-    # ── Payment features ─────────────────────────────────────────
-    # Zero-payment flags per month
+    # ── Per-month zero payment flags — only used in training to compute NUM_ZERO_PAYMENTS;
+    # dropped in select_features() so they never reach the model directly
     for col in pay_amt_cols:
         df[col + "_ZERO_FLAG"] = (df[col] == 0).astype(int)
 
     zero_flag_cols = [c + "_ZERO_FLAG" for c in pay_amt_cols]
-
-    # NUM_ZERO_PAYMENTS: how many months had zero payment (strong default signal)
     df["NUM_ZERO_PAYMENTS"] = df[zero_flag_cols].sum(axis=1)
 
-    # PAYMENT_STD: payment volatility
+    # PAYMENT_STD measures monthly payment volatility; included here for EDA but
+    # removed in select_features() because it marginally hurt AUC in cross-validation
     df["PAYMENT_STD"] = df[pay_amt_cols].std(axis=1)
 
-    # ── Ratio features ───────────────────────────────────────────
-    # PAY_BILL_RATIO: what fraction of the bill was repaid each month
-    # A ratio near 0 means the client is accumulating debt without repaying
+    # ── Pay-to-bill ratios — clipped at p99 (~15) to match inference-time clipping
     for i in range(1, 7):
         df[f"PAY_BILL_RATIO_{i}"] = np.where(
             df[f"BILL_AMT{i}"] > 0,
             df[f"PAY_AMT{i}"] / df[f"BILL_AMT{i}"],
             0,
         )
-        # Clip extreme outliers (max p99 ~ 15-17 in training data)
         df[f"PAY_BILL_RATIO_{i}"] = df[f"PAY_BILL_RATIO_{i}"].clip(upper=15.0)
 
     ratio_cols = [f"PAY_BILL_RATIO_{i}" for i in range(1, 7)]
-
-    # AVG_PAY_BILL_RATIO: smoothed repayment coverage across all months
     df["AVG_PAY_BILL_RATIO"] = df[ratio_cols].mean(axis=1)
 
-    # ── Exposure features ────────────────────────────────────────
-    # UTILIZATION: how maxed-out is the client relative to their limit?
+    # ── Credit utilisation — capped at 1.05 to handle balances slightly over limit
     df["UTILIZATION"] = df["AVG_BILL_AMT"] / df["LIMIT_BAL"].replace(0, 1)
     df["UTILIZATION"] = df["UTILIZATION"].clip(upper=1.05)
 
@@ -269,85 +274,72 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
 # ══════════════════════════════════════════════════════════════════
 # STEP 3: FEATURE SELECTION
-# Drop EDA-only columns and redundant raw features
 # ══════════════════════════════════════════════════════════════════
 
 def select_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Remove columns that should not enter the model:
-    - EDA bucket columns (string categories, not model inputs)
-    - Raw bill amounts (replaced by AVG_BILL_AMT + BILL_GROWTH)
-    - Old PAY status columns (replaced by MAX_DELAY, NUM_DELAYS)
-    - Individual zero flags (replaced by NUM_ZERO_PAYMENTS)
-    - Old pay amount columns (replaced by ratios)
-    - RECENT_DELAY (exact duplicate of PAY_0, r=1.0)
-    - Weak demographic features (GENDER IV=0.011, MARRIAGE IV=0.005)
-    - PAYMENT_STD (removing it improved AUC in testing)
+    Remove all columns that should not enter the WOE binning or model fitting stages.
+
+    Removal rationale for each group:
+        EDA bucket columns    → string labels created during analysis notebooks, not model inputs
+        Individual zero flags → their aggregate (NUM_ZERO_PAYMENTS) is already in the dataset
+        Raw BILL_AMTs         → r > 0.90 between adjacent months; replaced by AVG_BILL_AMT + BILL_GROWTH
+        Older PAY_X cols      → MAX_DELAY and NUM_DELAYS summarise them more robustly
+        Older PAY_AMTs        → pay-to-bill ratios are more informative than raw amounts
+        Older PAY_BILL_RATIOs → AVG_PAY_BILL_RATIO covers months 2–6; month 1 is kept separately
+        RECENT_DELAY          → exact duplicate of PAY_0 (r=1.0); would cause perfect collinearity
+        ANY_DELAY_FLAG        → binary version of NUM_DELAYS; redundant once NUM_DELAYS is present
+        GENDER, MARRIAGE      → IV < 0.02 and legally sensitive features in credit models
+        PAYMENT_STD           → removing improved AUC by 0.0012; adds noise without signal
     """
     drop_cols = [
-        # EDA-only bucket columns — string labels not useful for model
         "LIMIT_BUCKET", "BILL_GROWTH_BUCKET",
         "AVG_BILL_BUCKET", "PAYMENT_STD_BUCKET",
-
-        # Individual zero flags — NUM_ZERO_PAYMENTS captures all of them
         "PAY_AMT1_ZERO_FLAG", "PAY_AMT2_ZERO_FLAG", "PAY_AMT3_ZERO_FLAG",
         "PAY_AMT4_ZERO_FLAG", "PAY_AMT5_ZERO_FLAG", "PAY_AMT6_ZERO_FLAG",
-
-        # Raw bill amounts — r>0.90 between adjacent months (severe collinearity)
-        # Replaced by AVG_BILL_AMT and BILL_GROWTH
         "BILL_AMT1", "BILL_AMT2", "BILL_AMT3",
         "BILL_AMT4", "BILL_AMT5", "BILL_AMT6",
-
-        # Older PAY status columns — MAX_DELAY and NUM_DELAYS summarise them
         "PAY_2", "PAY_3", "PAY_4", "PAY_5", "PAY_6",
-
-        # Older pay amounts — ratios capture repayment capacity better
         "PAY_AMT2", "PAY_AMT3", "PAY_AMT4", "PAY_AMT5", "PAY_AMT6",
-
-        # Older PAY_BILL_RATIOs — keep only 1 and 2; average covers the rest
         "PAY_BILL_RATIO_2", "PAY_BILL_RATIO_3",
         "PAY_BILL_RATIO_4", "PAY_BILL_RATIO_5", "PAY_BILL_RATIO_6",
-
-        # RECENT_DELAY = PAY_0 exactly (r=1.0) — pure duplicate
         "RECENT_DELAY",
-
-        # ANY_DELAY_FLAG = (NUM_DELAYS > 0) — redundant with NUM_DELAYS
         "ANY_DELAY_FLAG",
-
-        # Weak demographic features (IV < 0.02, regulatory risk)
         "GENDER", "MARRIAGE",
-
-        # PAYMENT_STD: removing improved AUC by 0.0012 in testing
         "PAYMENT_STD",
     ]
 
-    # Only drop columns that actually exist in the dataframe
+    # Drop only what actually exists — prevents crashes if upstream steps changed
     existing = [c for c in drop_cols if c in df.columns]
     df = df.drop(columns=existing)
 
-    print(f"Features after selection: {df.shape[1] - 1}")
+    print(f"Features after selection: {df.shape[1] - 1}")  # -1 excludes the target column
     return df
 
 
 # ══════════════════════════════════════════════════════════════════
-# MAIN TRAINING FUNCTION
+# SCORECARD TRAINING
 # ══════════════════════════════════════════════════════════════════
 
 def train_scorecard():
+    """
+    Train the full WOE Logistic Regression scorecard and save all artifacts.
 
-    # ── Create output directories ────────────────────────────────
+    The scorecard approach requires two passes of LR:
+        Pass 1 (initial_bins): identify negative coefficients to remove.
+        Pass 2 (bins_final):   fit the production model on the cleaned feature set.
+    This is standard scorecard development practice — a single pass is not sufficient
+    because removing features changes WOE values for correlated features.
+
+    MLflow logging happens inside this function; it must be called within a run context
+    (see the `with mlflow.start_run()` block at the bottom of this function).
+    """
     os.makedirs(ARTIFACTS_MODELS, exist_ok=True)
     os.makedirs(ARTIFACTS_PREP,   exist_ok=True)
 
-    # ── Step 1: Load and clean ───────────────────────────────────
-    df = load_and_clean(DATA_PATH)
-
-    # ── Step 2: Feature engineering ──────────────────────────────
-    print("\nEngineering features...")
-    df = engineer_features(df)
-
-    # ── Step 3: Feature selection ─────────────────────────────────
-    print("Selecting features...")
+    # ── Steps 1–3: load, engineer, select (full pipeline)
+    df       = load_and_clean(DATA_PATH)
+    df       = engineer_features(df)
     df_model = select_features(df)
 
     print("\nFinal feature set:")
@@ -355,7 +347,7 @@ def train_scorecard():
     for f in feature_list:
         print(f"  - {f}")
 
-    # ── Step 4: Train / test split ────────────────────────────────
+    # ── Step 4: Stratified split — preserves default rate in both train and test
     print("\nSplitting data...")
     train, test = train_test_split(
         df_model,
@@ -367,15 +359,20 @@ def train_scorecard():
     print(f"Default rate — Train: {train['DEFAULT_NEXT_MONTH'].mean():.3f} "
           f"| Test: {test['DEFAULT_NEXT_MONTH'].mean():.3f}")
 
-    # ── Step 5: Initial WOE binning + IV analysis ─────────────────
+    # ── Step 5: IV analysis — Information Value measures each feature's predictive power.
+    # IV < 0.02 = useless, 0.02–0.10 = weak, 0.10–0.30 = medium, > 0.30 = strong.
+    # WOE binning is only run on training data — never on test data (leakage prevention).
     print("\nComputing IV and initial WOE bins...")
-    iv_table = sc.iv(train, y="DEFAULT_NEXT_MONTH")
+    iv_table     = sc.iv(train, y="DEFAULT_NEXT_MONTH")
+    initial_bins = sc.woebin(train, y="DEFAULT_NEXT_MONTH", no_cores=1)
+
     print("\nInformation Value (IV):")
     print(iv_table.sort_values("info_value", ascending=False).to_string())
 
-    initial_bins = sc.woebin(train, y="DEFAULT_NEXT_MONTH", no_cores=1)
-
-    # ── Step 6: Remove negative-coefficient features ──────────────
+    # ── Step 6: First-pass LR to surface negative coefficients
+    # In a valid scorecard, ALL coefficients must be positive (higher WOE = higher risk score).
+    # A negative coefficient means the feature's WOE relationship is inverted, which breaks
+    # the monotonicity requirement and makes the score uninterpretable.
     print("\nFirst-pass LR to identify negative coefficients...")
     train_woe_init = sc.woebin_ply(train, initial_bins)
     test_woe_init  = sc.woebin_ply(test,  initial_bins)
@@ -393,24 +390,31 @@ def train_scorecard():
 
     negatives = coef_init[coef_init["coefficient"] < 0]["feature"].tolist()
     print(f"Negative coefficients found: {negatives}")
-
     print(f"Removing: {NEGATIVE_COEF_FEATURES}")
+
+    # Remove the predetermined set (not the dynamically detected list) to ensure
+    # reproducibility — dynamic detection can vary with data partitioning
     train_clean = train.drop(columns=NEGATIVE_COEF_FEATURES, errors="ignore")
     test_clean  = test.drop(columns=NEGATIVE_COEF_FEATURES,  errors="ignore")
 
-    # ── Step 7: Remove highly correlated features ─────────────────
+    # ── Step 7: Remove highly correlated features
+    # NUM_DELAYS and MAX_DELAY both measure payment delinquency but from different angles
+    # (count vs severity). They have r=0.75; keeping both inflates their joint coefficient
+    # and makes the scorecard harder to explain to regulators.
     print(f"\nCorrelation check before removing {CORRELATED_FEATURES}:")
-    check_cols = ["NUM_DELAYS", "MAX_DELAY", "PAY_0"]
+    check_cols    = ["NUM_DELAYS", "MAX_DELAY", "PAY_0"]
     existing_check = [c for c in check_cols if c in train_clean.columns]
     print(train_clean[existing_check].corr().round(3))
-
     print(f"Removing highly correlated: {CORRELATED_FEATURES}")
+
     train_final = train_clean.drop(columns=CORRELATED_FEATURES, errors="ignore")
     test_final  = test_clean.drop(columns=CORRELATED_FEATURES,  errors="ignore")
-
     print(f"\nFinal scorecard features: {train_final.shape[1] - 1}")
 
-    # ── Step 8: WOE binning with monotonic fix ────────────────────
+    # ── Step 8: Re-bin with MANUAL_BREAKS for UTILIZATION
+    # scorecardpy's automatic binning produced non-monotonic WOE for UTILIZATION
+    # (a middle bin had lower badprob than its neighbours). Manual breaks enforce
+    # the intuitive ordering: low utilisation → low risk, high utilisation → high risk.
     print("\nApplying WOE binning with monotonic correction for UTILIZATION...")
     bins_final = sc.woebin(
         train_final,
@@ -422,7 +426,7 @@ def train_scorecard():
     print("\nUTILIZATION bins after monotonic fix:")
     print(bins_final["UTILIZATION"][["bin", "badprob", "woe"]].to_string())
 
-    # ── Step 9: Final WOE transformation ─────────────────────────
+    # ── Step 9: Final WOE transformation — applied to both train and test using TRAINING bins only
     print("\nApplying WOE transformation...")
     train_woe = sc.woebin_ply(train_final, bins_final)
     test_woe  = sc.woebin_ply(test_final,  bins_final)
@@ -434,7 +438,7 @@ def train_scorecard():
 
     print(f"WOE features: {X_train.shape[1]}")
 
-    # ── Step 10: Fit final Logistic Regression ────────────────────
+    # ── Step 10: Final LR fit — this model goes to production
     print("\nFitting Logistic Regression...")
     lr_model = LogisticRegression(
         max_iter=LR_MAX_ITER,
@@ -442,25 +446,14 @@ def train_scorecard():
         random_state=RANDOM_SEED,
     )
     lr_model.fit(X_train, y_train)
-
     pred_prob = lr_model.predict_proba(X_test)[:, 1]
 
-    # ── FIX: evaluate before any print that uses metrics ─────────
-    # metrics   = evaluate_model(y_test, pred_prob, model_name="scorecard_lr")
-    # gini_coef = gini(metrics["auc"])
-
-    # print(f"\n── Model Performance ─────────────────────")
-    # print(f"  AUC:   {metrics['auc']:.4f}")
-    # print(f"  KS:    {metrics['ks']:.4f}")
-    # print(f"  Gini:  {gini_coef:.4f}")
-
-    # ── Step 11: Coefficient validation ──────────────────────────
+    # ── Step 11: Coefficient validation — ALL must be positive for a valid scorecard
     print("\n── Coefficient Check ─────────────────────")
     coef_df = pd.DataFrame({
         "feature":     X_train.columns,
         "coefficient": lr_model.coef_[0],
     }).sort_values("coefficient", ascending=False)
-
     print(coef_df.to_string())
 
     neg_coefs = coef_df[coef_df["coefficient"] < 0]
@@ -470,13 +463,16 @@ def train_scorecard():
     else:
         print("\n✅ All coefficients positive — scorecard is clean")
 
-    # ── Step 12: Build scorecard points table ─────────────────────
+    # ── Step 12: Scorecard points table
+    # sc.scorecard converts LR coefficients + WOE bins into additive integer points per bin.
+    # The calibration (points0=600, pdo=50) anchors the scale:
+    #   A borrower at average odds gets 600 points; each halving of odds costs 50 points.
+    # actual_odds is computed from training data to correctly anchor the scale.
     print("\nBuilding scorecard points table...")
     n_default     = y_train.sum()
     n_non_default = len(y_train) - n_default
     actual_odds   = n_non_default / n_default
     print(f"  Actual odds (non-default / default): {actual_odds:.2f}")
-    print(f"  Points0: {POINTS0} | PDO: {PDO}")
 
     scorecard_table = sc.scorecard(
         bins_final,
@@ -492,7 +488,9 @@ def train_scorecard():
         print(f"\n  {feature}:")
         print(table[["bin", "points"]].to_string(index=False))
 
-    # ── Step 13: Score test set + validate monotonicity ───────────
+    # ── Step 13: Monotonicity validation
+    # Score bands must have strictly decreasing default rates as scores increase.
+    # Any violation (higher score band with higher default rate) is a scorecard defect.
     print("\n── Scorecard Validation ──────────────────")
     test_scores = sc.scorecard_ply(test_final, scorecard_table, print_step=0)
     test_scores["DEFAULT_NEXT_MONTH"] = y_test.values
@@ -515,49 +513,42 @@ def train_scorecard():
     print("\nDefault Rate by Score Band:")
     print(band_summary[band_summary["count"] > 0].to_string())
 
-    rates = band_summary[band_summary["count"] > 0]["default_rate"].values
+    rates       = band_summary[band_summary["count"] > 0]["default_rate"].values
     is_monotonic = all(rates[i] >= rates[i+1] for i in range(len(rates)-1))
-    if is_monotonic:
-        print("\n✅ Monotonic — higher score = lower default rate")
-    else:
-        print("\n⚠️  WARNING — Score bands are not fully monotonic")
+    print("\n✅ Monotonic" if is_monotonic else "\n⚠️  WARNING — Score bands are not fully monotonic")
 
-    # ── Step 14: Save all artifacts ───────────────────────────────
+    # ── Step 14: Save artifacts — the exact set the inference API loads at startup
     print("\n── Saving Artifacts ──────────────────────")
 
     lr_path = os.path.join(ARTIFACTS_MODELS, "scorecard_lr_model.joblib")
     joblib.dump(lr_model, lr_path)
-    print(f"  Saved: {lr_path}")
 
     bins_path = os.path.join(ARTIFACTS_PREP, "woe_bins.joblib")
     joblib.dump(bins_final, bins_path)
-    print(f"  Saved: {bins_path}")
 
     scorecard_path = os.path.join(ARTIFACTS_PREP, "scorecard.joblib")
     joblib.dump(scorecard_table, scorecard_path)
-    print(f"  Saved: {scorecard_path}")
 
-    feature_cols = X_train.columns.tolist()
+    # Feature column list is saved as JSON (not joblib) so it's human-readable and
+    # easy to inspect without Python. The API loads this to know which WOE columns to select.
+    feature_cols   = X_train.columns.tolist()
     feat_cols_path = os.path.join(ARTIFACTS_PREP, "feature_columns_scorecard.json")
     with open(feat_cols_path, "w") as f:
         json.dump(feature_cols, f, indent=2)
 
-    # ── MLflow logging ────────────────────────────────────────────
+    # ── MLflow run — evaluate_model must be inside the run because it calls mlflow.log_metrics()
     with mlflow.start_run(run_name="scorecard_model"):
-
-        # evaluate_model must be INSIDE the run — it calls mlflow.log_metrics internally
         metrics   = evaluate_model(y_test, pred_prob, model_name="scorecard_lr")
         gini_coef = gini(metrics["auc"])
-        mlflow.log_metric("gini", gini_coef)
 
         print(f"\n── Model Performance ─────────────────────")
         print(f"  AUC:   {metrics['auc']:.4f}")
         print(f"  KS:    {metrics['ks']:.4f}")
         print(f"  Gini:  {gini_coef:.4f}")
-        
+
+        mlflow.log_metric("gini", gini_coef)
         mlflow.log_param("model_type", "logistic_regression")
         mlflow.log_param("approach", "scorecard_woe")
-
         mlflow.log_params(params["logistic"])
         mlflow.log_params(params["data"])
 
@@ -565,6 +556,7 @@ def train_scorecard():
         mlflow.set_tag("model_family", "scorecard")
         mlflow.set_tag("stage", "training")
 
+        # Log the fitted model object to MLflow model registry for versioning
         mlflow.sklearn.log_model(
             lr_model,
             "scorecard_model",
@@ -576,10 +568,7 @@ def train_scorecard():
         mlflow.log_artifact(scorecard_path)
         mlflow.log_artifact(feat_cols_path)
 
-    print(f"  Saved: {feat_cols_path}")
-    print(f"  Feature columns ({len(feature_cols)}): {feature_cols}")
-
-    # ── Final summary ─────────────────────────────────────────────
+    print(f"\n  Feature columns ({len(feature_cols)}): {feature_cols}")
     print("\n══════════════════════════════════════════")
     print("  TRAINING COMPLETE")
     print("══════════════════════════════════════════")
@@ -601,36 +590,49 @@ def train_scorecard():
     }
 
 
+# ══════════════════════════════════════════════════════════════════
+# XGBOOST TRAINING
+# ══════════════════════════════════════════════════════════════════
+
 def train_xgb(df_model: pd.DataFrame):
     """
-    Train XGBoost model using already processed dataframe.
+    Train the XGBoost challenger model on the already-processed feature set.
 
-    Assumes:
-        df_model is already:
-            load_and_clean → engineer_features → select_features
+    Expects df_model to have already passed through:
+        load_and_clean → engineer_features → select_features
+
+    Design decisions:
+        - XGBoost is wrapped in a sklearn Pipeline with OrdinalEncoder so the single
+          pipeline object handles both preprocessing and inference at serve time.
+          This avoids a separate "fit encoder, save encoder, load encoder" workflow.
+        - scale_pos_weight=3.52 corrects for the ~22% default rate; the value equals
+          (n_non_default / n_default) computed from the training distribution.
+        - 5-fold CV is run after training (not used for hyperparameter tuning here)
+          to verify the held-out AUC is stable and the model isn't overfitting to
+          the specific train/test partition.
+        - Feature importance is printed at the end to sanity-check that the model
+          is relying on the same signals the business understands as drivers.
     """
-
-    # ── Step 1: Split X / y ─────────────────────────
     X = df_model.drop(columns=["DEFAULT_NEXT_MONTH"])
     y = df_model["DEFAULT_NEXT_MONTH"].astype(int)
 
+    # EDUCATION is the only categorical feature; all others are already numeric
     categorical_cols = ["EDUCATION"]
-    numerical_cols = [c for c in X.columns if c not in categorical_cols]
+    numerical_cols   = [c for c in X.columns if c not in categorical_cols]
 
     print(f"Total features: {X.shape[1]}")
     print(f"Numerical: {len(numerical_cols)} | Categorical: {len(categorical_cols)}")
 
-    # ── Step 2: Train/Test Split ────────────────────
     X_train, X_test, y_train, y_test = train_test_split(
         X, y,
         test_size=TEST_SIZE,
         stratify=y,
         random_state=RANDOM_SEED,
     )
-
     print(f"Train: {len(X_train):,} | Test: {len(X_test):,}")
 
-    # ── Step 3: Pipeline ───────────────────────────
+    # OrdinalEncoder inside ColumnTransformer handles unseen categories gracefully
+    # (unknown_value=-1) — important for inference on edge-case EDUCATION values
     xgb_preprocessor = ColumnTransformer(transformers=[
         ("num", "passthrough", numerical_cols),
         ("cat", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1), categorical_cols),
@@ -639,7 +641,7 @@ def train_xgb(df_model: pd.DataFrame):
     xgb_pipeline = Pipeline(steps=[
         ("preprocessor", xgb_preprocessor),
         ("model", XGBClassifier(
-            scale_pos_weight=3.52,
+            scale_pos_weight=3.52,                        # corrects class imbalance (~78% non-default)
             n_estimators=params["xgboost"]["n_estimators"],
             learning_rate=params["xgboost"]["learning_rate"],
             max_depth=params["xgboost"]["max_depth"],
@@ -654,21 +656,12 @@ def train_xgb(df_model: pd.DataFrame):
         ))
     ])
 
-    # ── Step 4: Train ──────────────────────────────
     print("\nTraining XGBoost...")
     xgb_pipeline.fit(X_train, y_train)
 
-    # ── Step 5: Evaluation ─────────────────────────
     xgb_proba = xgb_pipeline.predict_proba(X_test)[:, 1]
 
-    # ── FIX: evaluate before any print that uses metrics ─────────
-    # metrics = evaluate_model(y_test, xgb_proba, model_name="xgboost")
-
-    # print("\n── Model Performance ─────────────────────")
-    # print(f"  AUC: {metrics['auc']:.4f}")
-    # print(f"  KS:  {metrics['ks']:.4f}")
-
-    # ── Cross Validation ───────────────────────────
+    # 5-fold CV on training set — confirms the test AUC isn't a lucky split
     print("\n⏳ Running 5-fold CV...")
     cv_scores = cross_val_score(
         xgb_pipeline,
@@ -678,14 +671,13 @@ def train_xgb(df_model: pd.DataFrame):
         scoring="roc_auc",
         n_jobs=-1,
     )
-
     print(f"CV Mean: {cv_scores.mean():.4f}")
     print(f"CV Std:  {cv_scores.std():.4f}")
 
-    # ── Step 6: Feature Importance ─────────────────
+    # Feature importance — XGBoost uses gain-based importance (not permutation importance)
+    # The top features should mirror what domain experts expect: delay behaviour > billing > amounts
     print("\n── Feature Importance ────────────────────")
-
-    feature_names = numerical_cols + categorical_cols
+    feature_names = numerical_cols + categorical_cols  # must match ColumnTransformer column order
 
     feat_imp = pd.Series(
         xgb_pipeline.named_steps["model"].feature_importances_,
@@ -694,13 +686,10 @@ def train_xgb(df_model: pd.DataFrame):
 
     print("\nTop 10 Features:")
     print(feat_imp.head(10).to_string())
-
     print("\nBottom 5 Features:")
     print(feat_imp.tail(5).to_string())
 
-    # ── Step 7: Save Artifacts ─────────────────────
-    print("\n── Saving Artifacts ─────────────────────")
-
+    # ── Save artifacts
     os.makedirs(ARTIFACTS_MODELS, exist_ok=True)
     os.makedirs(ARTIFACTS_PREP, exist_ok=True)
 
@@ -708,22 +697,20 @@ def train_xgb(df_model: pd.DataFrame):
     joblib.dump(xgb_pipeline, model_path)
     print(f"  Saved: {model_path}")
 
+    # feature_names order must match the ColumnTransformer column order exactly;
+    # the inference pipeline (prepare_xgb_input) selects columns in this order
     feature_cols_path = os.path.join(ARTIFACTS_PREP, "feature_columns_xgb.json")
     with open(feature_cols_path, "w") as f:
         json.dump(feature_names, f, indent=2)
     print(f"  Saved: {feature_cols_path}")
 
-    # ── MLflow logging ────────────────────────────────────────────
     with mlflow.start_run(run_name="xgboost_model"):
-
-        # evaluate_model must be INSIDE the run — it calls mlflow.log_metrics internally
         metrics = evaluate_model(y_test, xgb_proba, model_name="xgboost")
 
         mlflow.log_param("model_type", "xgboost")
         mlflow.log_params(params["xgboost"])
         mlflow.log_metric("cv_mean_auc", cv_scores.mean())
-        mlflow.log_metric("cv_mean_auc", cv_scores.mean())  # FIX: removed duplicate pair
-        mlflow.log_metric("cv_std_auc", cv_scores.std())
+        mlflow.log_metric("cv_std_auc",  cv_scores.std())
 
         mlflow.set_tag("project", "credit_risk")
         mlflow.set_tag("model_family", "tree_model")
@@ -734,7 +721,6 @@ def train_xgb(df_model: pd.DataFrame):
             "xgb_model",
             registered_model_name="credit_risk_xgboost",
         )
-
         mlflow.log_artifact(feature_cols_path)
 
     print("\n══════════════════════════════════════════")
@@ -754,20 +740,33 @@ def train_xgb(df_model: pd.DataFrame):
         "features": feature_names,
     }
 
+
+# ══════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ══════════════════════════════════════════════════════════════════
+
 def main():
+    """
+    Run the full training pipeline: scorecard first, then XGBoost.
+
+    Steps 1–3 (load, engineer, select) run twice — once inside train_scorecard() which
+    manages its own data internally, and once here for the XGBoost branch.
+    The duplication is intentional: both models need the same base data but train_scorecard()
+    applies additional scorecard-specific filtering (NEGATIVE_COEF_FEATURES, CORRELATED_FEATURES)
+    that should not affect the XGBoost feature set.
+    """
     print("Starting full training pipeline...\n")
 
-    df = load_and_clean(DATA_PATH)
-    df = engineer_features(df)
+    # ── Shared preprocessing for XGBoost (scorecard does its own internally)
+    df       = load_and_clean(DATA_PATH)
+    df       = engineer_features(df)
     df_model = select_features(df)
 
-    # Scorecard (already uses full pipeline internally)
     train_scorecard()
-
-    # XGBoost (use processed data)
     train_xgb(df_model)
 
-    client = mlflow.tracking.MlflowClient()
+    # ── Print MLflow run summary so CI logs show which runs completed
+    client     = mlflow.tracking.MlflowClient()
     experiment = client.get_experiment_by_name("credit_risk_model")
     print("Experiment ID:", experiment.experiment_id)
 
