@@ -2,7 +2,7 @@
 
 > A full-stack, end-to-end credit risk intelligence platform built with machine learning, financial engineering, and modern web technologies. Predicts borrower default risk, calculates portfolio losses, and stress-tests under adverse economic scenarios.
 
-**Live Demo:** [Frontend on Vercel](https://credit-risk-modelling-3zjb.onrender.com) · [API on Render](https://credit-risk-modelling-3zjb.onrender.com/docs)
+**Live Demo:** [Frontend on Vercel](https://credit-risk-modelling-two.vercel.app/)
 
 ---
 
