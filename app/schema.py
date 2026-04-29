@@ -17,8 +17,7 @@ error-prone — the field semantics (e.g. PAY scale of -2 to 8) require dataset 
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Dict
-
+from typing import Optional, Dict, List, Any
 
 class ClientInput(BaseModel):
     """
@@ -74,15 +73,38 @@ class ClientInput(BaseModel):
         }
 
 
-# ── Response models — typed wrappers so FastAPI validates and serialises output correctly
+# ── Nested models used inside ScorecardResponse ──────────────────────────────
+
+class RiskDriver(BaseModel):
+    """A single ranked risk driver returned in the scorecard response."""
+    feature:      str    # raw feature name (e.g. "MAX_DELAY", "UTILIZATION")
+    contribution: float  # signed coef × WOE value; positive = pushes toward default
+
+
+# ── Response models ───────────────────────────────────────────────────────────
 
 class ScorecardResponse(BaseModel):
-    """Champion model response including interpretable credit score and risk band."""
-    model:               str    # identifies which model variant produced this output
+    """
+    Champion model response including interpretable credit score, risk band,
+    per-feature WOE×coefficient contributions, per-feature score points,
+    and the top 3 ranked risk drivers.
+    """
+    model:               str
     credit_score:        int    # additive points-based score (higher = lower risk, range ~576–906)
     default_probability: float  # P(default) from the LR model, rounded to 4 decimal places
     risk_level:          str    # human-readable risk band (e.g. "Moderate")
     decision:            str    # lending recommendation: Approve / Review / Decline
+
+    # Per-feature breakdown — both fields are dicts keyed by raw feature name
+    feature_contributions: Optional[Dict[str, float]] = None
+    # coef × WOE per feature; positive value = feature is increasing default risk
+
+    point_contributions: Optional[Dict[str, Any]] = None
+    # integer score points assigned to each feature bin (from the scorecard table)
+    # Also contains "__basepoints__" key for the intercept contribution
+
+    top_risk_drivers: Optional[List[RiskDriver]] = None
+    # Ranked list of the top 3 features most responsible for the borrower's risk
 
 
 class XGBResponse(BaseModel):
@@ -124,7 +146,7 @@ class BusinessInput(BaseModel):
         example=2, ge=1, le=6
     )
 
-    # ── Repayment behaviour — three fields summarise 6 monthly PAY_X columns
+    # ── Repayment behaviour
     recent_delay:   int   = Field(
         ...,
         description="Most recent payment status (-2 to 8)",
@@ -141,7 +163,7 @@ class BusinessInput(BaseModel):
         example=0, ge=0, le=6
     )
 
-    # ── Billing history — two fields reconstruct 6 monthly BILL_AMT columns
+    # ── Billing history
     avg_bill_amount:  float = Field(..., description="Average monthly bill (NT dollars)", example=15000, ge=0)
     bill_growth_rate: float = Field(
         default=0.0,
@@ -149,7 +171,7 @@ class BusinessInput(BaseModel):
         example=0.0, ge=-1, le=1
     )
 
-    # ── Payment amounts — two fields reconstruct 6 monthly PAY_AMT columns
+    # ── Payment amounts
     payment_amount:    float = Field(..., description="Typical monthly payment (NT dollars)", example=5000, ge=0)
     zero_payment_count: int  = Field(
         default=0,
@@ -175,7 +197,14 @@ class WhatIfRequest(BaseModel):
 
 
 class WhatIfResponse(BaseModel):
-    """Score and PD delta between two scenarios — positive delta_score = score improved."""
+    """
+    Score and PD delta between two scenarios.
+
+    Positive delta_score = score improved (lower risk).
+    Negative delta_pd    = risk decreased (good).
+    decision_flipped     = True when the lending decision changed between scenarios
+                           (e.g. Decline → Approve, or Review → Approve).
+    """
     base_score:  int
     new_score:   int
     delta_score: int    # new_score − base_score; positive = improvement
@@ -183,3 +212,78 @@ class WhatIfResponse(BaseModel):
     base_pd:  float
     new_pd:   float
     delta_pd: float    # new_pd − base_pd; negative = risk decreased (good)
+
+    base_decision:    str   # lending decision for the base scenario
+    new_decision:     str   # lending decision for the modified scenario
+    decision_flipped: bool  # True if the decision category changed
+
+
+# ── Explainability request/response models ────────────────────────────────────
+
+class ExplainRequest(BaseModel):
+    """Input for the /explain endpoint — accepts a BusinessInput payload."""
+    input: BusinessInput
+
+
+class FeatureExplanation(BaseModel):
+    """Explanation for a single feature."""
+    feature:       str    # raw feature name
+    woe_value:     float  # Weight of Evidence value for the borrower's bin
+    coefficient:   float  # LR coefficient for this feature
+    contribution:  float  # coef × WOE — signed contribution to log-odds
+    score_points:  int    # integer points this feature contributes to the credit score
+    risk_direction: str   # "increases_risk" | "decreases_risk" | "neutral"
+
+
+class ExplainResponse(BaseModel):
+    """Full feature-level explanation of a scorecard prediction."""
+    credit_score:        int
+    default_probability: float
+    risk_level:          str
+    decision:            str
+    base_points:         int                    # scorecard intercept points
+    feature_explanations: List[FeatureExplanation]  # one entry per scorecard feature, sorted by contribution desc
+    top_risk_drivers:    List[RiskDriver]            # top 3 features pushing toward default
+
+
+# ── Recommendation request/response models ────────────────────────────────────
+
+class RecommendRequest(BaseModel):
+    """Input for the /recommend endpoint."""
+    input: BusinessInput
+
+
+class Recommendation(BaseModel):
+    """A single actionable recommendation for one risk driver."""
+    feature:        str   # raw feature name
+    current_value:  str   # human-readable description of the borrower's current value
+    action:         str   # what the borrower should do (e.g. "Reduce credit utilisation below 50%")
+    expected_impact: str  # qualitative impact (e.g. "High", "Medium", "Low")
+    priority:       int   # 1 = most impactful, ascending
+
+
+class RecommendResponse(BaseModel):
+    """Actionable improvement recommendations based on the top risk drivers."""
+    credit_score:        int
+    default_probability: float
+    risk_level:          str
+    decision:            str
+    recommendations:     List[Recommendation]
+
+
+# ── Portfolio KPI response model ──────────────────────────────────────────────
+
+class PortfolioSummaryResponse(BaseModel):
+    """
+    Aggregate portfolio KPIs read from stored model metadata.
+    Returned by /portfolio/summary.
+    """
+    avg_pd:           float   # average probability of default across training/test set
+    pct_high_risk:    float   # % of borrowers classified as high risk (PD > 0.20)
+    pct_medium_risk:  float   # % of borrowers classified as medium risk (0.05 <= PD <= 0.20)
+    pct_low_risk:     float   # % of borrowers classified as low risk (PD < 0.05)
+    total_ecl:        float   # total expected credit loss (using stored PDs and default LGD)
+    auc:              float   # model AUC from training evaluation
+    ks:               float   # KS statistic from training evaluation
+    gini:             float   # Gini coefficient (2×AUC − 1)
+    total_borrowers:  int     # total number of records in the evaluation set
