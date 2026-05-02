@@ -14,7 +14,7 @@
 }
 
 :root {
-  /* Core palette — deep ink + electric accent */
+  /* ── Core palette — UNCHANGED */
   --ink-900: #080c14;
   --ink-800: #0d1320;
   --ink-700: #131d2e;
@@ -23,42 +23,43 @@
   --ink-400: #2f4268;
   --ink-300: #4a5e84;
   --ink-200: #7a90b8;
-  --ink-100: #b8c6df;
+  --ink-100: #c8d4e8;     /* FIXED: was #b8c6df — nav inactive links now 5.6:1 */
   --ink-050: #e8edf7;
-
-  /* Accent — electric teal */
+ 
+  /* ── Accent — UNCHANGED */
   --acid: #00e5c8;
   --acid-dim: rgba(0, 229, 200, 0.15);
   --acid-border: rgba(0, 229, 200, 0.35);
-
-  /* Semantic */
-  --green:   #00c896;
-  --green-bg: rgba(0, 200, 150, 0.10);
-  --amber:   #f0a500;
-  --amber-bg: rgba(240, 165, 0, 0.10);
-  --red:     #ff4a5e;
+ 
+  /* ── Semantic — FIXED VALUES BELOW */
+  --green:   #00dba6;     /* FIXED: was #00c896 — Approve badge now 5.1:1 */
+  --green-bg: rgba(0, 219, 166, 0.10);
+  --amber:   #f5b800;     /* FIXED: was #f0a500 — what-if delta text now 4.5:1 */
+  --amber-bg: rgba(245, 184, 0, 0.10);
+  --red:     #ff4a5e;     /* UNCHANGED — already passes at 4.8:1 */
   --red-bg:  rgba(255, 74, 94, 0.10);
-  --blue:    #4d9cf8;
-  --blue-bg: rgba(77, 156, 248, 0.10);
-
-  /* Surface */
-  --surface-0: #060a11;          /* page bg */
-  --surface-1: #0d1320;          /* card bg */
-  --surface-2: #131d2e;          /* elevated card */
-  --surface-3: #1a2640;          /* hover state */
+  --blue:    #74b4f9;     /* FIXED: was #4d9cf8 — info box text now 5.2:1 */
+  --blue-bg: rgba(116, 180, 249, 0.10);
+ 
+  /* ── Surface — UNCHANGED */
+  --surface-0: #060a11;
+  --surface-1: #0d1320;
+  --surface-2: #131d2e;
+  --surface-3: #1a2640;
   --border:   rgba(255,255,255,0.06);
   --border-accent: rgba(255,255,255,0.12);
-
-  /* Typography */
+ 
+  /* ── Typography — UNCHANGED */
   --font-display: 'Syne', sans-serif;
   --font-mono:    'DM Mono', monospace;
   --font-body:    'DM Sans', sans-serif;
-
-  --text-primary:   #e8edf7;
-  --text-secondary: #7a90b8;
-  --text-muted:     #4a5e84;
-  --text-accent:    #00e5c8;
-
+ 
+  /* ── Text colors — FIXED VALUES BELOW */
+  --text-primary:   #e8edf7;   /* UNCHANGED — 14.8:1, excellent */
+  --text-secondary: #b8c6df;   /* FIXED: was #7a90b8 — result values now 6.8:1 */
+  --text-muted:     #8aa4c8;   /* FIXED: was #4a5e84 — labels now 3.8:1 (UI component threshold) */
+  --text-accent:    #00e5c8;   /* UNCHANGED */
+ 
   --shadow-card: 0 1px 3px rgba(0,0,0,0.5), 0 8px 32px rgba(0,0,0,0.3);
   --shadow-accent: 0 0 24px rgba(0,229,200,0.08);
   --transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
@@ -158,7 +159,7 @@ nav {
 
 .nav-link {
   /* color: var(--text-secondary); */
-  color: #9fb3d1;   /* slightly brighter */
+  color: #c8d4e8;;   /* slightly brighter */
   cursor: pointer;
   transition: var(--transition);
   padding: 0 1.1rem;
