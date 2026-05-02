@@ -410,6 +410,114 @@ async function getModelInfo() {
   }
 }
 
+// ================================================================
+// PORTFOLIO SUMMARY API  (NEW — GET /portfolio/summary)
+// ================================================================
+
+/**
+ * Fetch aggregate portfolio KPIs from stored model metadata.
+ * NEW endpoint: GET /portfolio/summary
+ * Returns avg_pd, pct_high_risk, pct_medium_risk, pct_low_risk,
+ * total_ecl, auc, ks, gini, total_borrowers.
+ * Returns HTTP 503 if training hasn't been run yet.
+ */
+async function getPortfolioSummary() {
+    console.log('[PORTFOLIO] Fetching portfolio summary...');
+    try {
+        const response = await fetch(`${API_BASE_URL}/portfolio/summary`, {
+            method: 'GET',
+        });
+
+        if (response.status === 503) {
+            // Training hasn't been run — graceful degradation
+            console.warn('[PORTFOLIO] Metadata not available (503)');
+            return { success: false, error: 'Model metadata not available. Run training first.' };
+        }
+
+        if (!response.ok) {
+            throw new Error(`Portfolio summary failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('[PORTFOLIO] ✓ Summary retrieved:', data);
+        return { success: true, data };
+    } catch (error) {
+        console.error('[PORTFOLIO] ✗ Error:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// ================================================================
+// EXPLAIN API  (NEW — POST /explain)
+// ================================================================
+
+/**
+ * Get a feature-level explanation of a scorecard prediction.
+ * NEW endpoint: POST /explain
+ * Accepts a BusinessInput payload.
+ * Returns per-feature WOE values, coefficients, contributions,
+ * score points, top risk drivers, and policy rule results.
+ * @param {Object} businessInput - BusinessInput schema payload
+ */
+async function explainPrediction(businessInput) {
+    console.log('[EXPLAIN] Fetching explanation...', businessInput);
+    try {
+        const response = await fetch(`${API_BASE_URL}/explain`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(businessInput),
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || response.statusText);
+        }
+
+        const data = await response.json();
+        console.log('[EXPLAIN] ✓ Explanation retrieved:', data);
+        return { success: true, data };
+    } catch (error) {
+        console.error('[EXPLAIN] ✗ Error:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// ================================================================
+// RECOMMEND API  (NEW — POST /recommend)
+// ================================================================
+
+/**
+ * Get actionable improvement recommendations for a borrower.
+ * NEW endpoint: POST /recommend
+ * Accepts a BusinessInput payload.
+ * Returns up to 5 prioritised recommendations with feature label,
+ * current value, action, expected impact, and priority rank.
+ * @param {Object} businessInput - BusinessInput schema payload
+ */
+async function getRecommendations(businessInput) {
+    console.log('[RECOMMEND] Fetching recommendations...', businessInput);
+    try {
+        const response = await fetch(`${API_BASE_URL}/recommend`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(businessInput),
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || response.statusText);
+        }
+
+        const data = await response.json();
+        console.log('[RECOMMEND] ✓ Recommendations retrieved:', { count: data.recommendations?.length });
+        return { success: true, data };
+    } catch (error) {
+        console.error('[RECOMMEND] ✗ Error:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+
 /**
  * ================================================================
  * UTILITY FUNCTIONS

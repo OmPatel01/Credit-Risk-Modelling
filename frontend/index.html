@@ -141,8 +141,8 @@
             <h2 class="section-title">🔴 Problem & Solution</h2>
 
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                <div class="card" style="border-left: 4px solid var(--danger-color);">
-                    <div class="card-header" style="color: var(--danger-color);">❌ Problem</div>
+                <div class="card" style="border-left: 4px solid var(--red);">
+                    <div class="card-header" style="color: var(--red);">❌ Problem</div>
                     <div class="card-body">
                         <p>
                             Financial institutions face <strong>uncertainty</strong> in credit decisions:
@@ -157,8 +157,8 @@
                     </div>
                 </div>
 
-                <div class="card" style="border-left: 4px solid var(--success-color);">
-                    <div class="card-header" style="color: var(--success-color);">✓ Solution</div>
+                <div class="card" style="border-left: 4px solid var(--green);">
+                    <div class="card-header" style="color: var(--green);">✓ Solution</div>
                     <div class="card-body">
                         <p>
                             This system provides <strong>data-driven</strong> risk assessment:
@@ -255,6 +255,30 @@
                 <strong>API Layer:</strong> FastAPI backend with RESTful endpoints<br>
                 <strong>ML Layer:</strong> Credit risk models (Logistic Regression + XGBoost)<br>
                 <strong>Feature Layer:</strong> Engineered features, WOE transformations, binning
+            </div>
+
+            <!-- Live model performance metrics — populated by index.js via /portfolio/summary -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-top: 1.5rem;">
+                <div class="metric-box">
+                    <div class="metric-value" id="kpi-auc" style="font-size: 1.4rem;">—</div>
+                    <div class="metric-label">Model AUC</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value" id="kpi-ks" style="font-size: 1.4rem;">—</div>
+                    <div class="metric-label">KS Statistic</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value" id="kpi-gini" style="font-size: 1.4rem;">—</div>
+                    <div class="metric-label">Gini Coefficient</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value" id="kpi-avg-pd" style="font-size: 1.4rem;">—</div>
+                    <div class="metric-label">Avg Portfolio PD</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value" id="kpi-borrowers" style="font-size: 1.4rem;">—</div>
+                    <div class="metric-label">Borrowers Evaluated</div>
+                </div>
             </div>
 
             <!-- SVG Architecture Diagram -->
